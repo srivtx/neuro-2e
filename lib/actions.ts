@@ -1,24 +1,22 @@
 "use server";
 
-import { getDb } from "./db";
+import { run, querySingle, query } from "./db";
 
 const today = () => new Date().toISOString().split("T")[0];
 
 // ===== CCU Tracking =====
 export async function getTodayCCU(): Promise<number> {
-  const db = getDb();
-  const row = db.prepare("SELECT SUM(cost) as total FROM ccu_log WHERE date = ?").get(today()) as { total: number } | undefined;
-  return row?.total ?? 0;
+  const result = await querySingle("SELECT SUM(cost) as total FROM ccu_log WHERE date = ?", [today()]);
+  return result?.total ?? 0;
 }
 
 export async function addCCU(activity: string, cost: number) {
-  const db = getDb();
-  db.prepare("INSERT INTO ccu_log (date, activity, cost) VALUES (?, ?, ?)").run(today(), activity, cost);
+  await run("INSERT INTO ccu_log (date, activity, cost) VALUES (?, ?, ?)", [today(), activity, cost]);
 }
 
 export async function getCCULog() {
-  const db = getDb();
-  return db.prepare("SELECT * FROM ccu_log WHERE date = ? ORDER BY created_at DESC").all(today()) as {
+  const result = await query("SELECT * FROM ccu_log WHERE date = ? ORDER BY created_at DESC", [today()]);
+  return result.rows as {
     id: number;
     date: string;
     activity: string;
@@ -29,42 +27,38 @@ export async function getCCULog() {
 
 // ===== Daily Checklist =====
 export async function getTodayChecklist(): Promise<string[]> {
-  const db = getDb();
-  const row = db.prepare("SELECT checked_items FROM daily_checklist WHERE date = ?").get(today()) as { checked_items: string } | undefined;
-  return row ? JSON.parse(row.checked_items) : [];
+  const result = await querySingle("SELECT checked_items FROM daily_checklist WHERE date = ?", [today()]);
+  return result ? JSON.parse(result.checked_items) : [];
 }
 
 export async function setTodayChecklist(items: string[]) {
-  const db = getDb();
-  const exists = db.prepare("SELECT 1 FROM daily_checklist WHERE date = ?").get(today());
-  if (exists) {
-    db.prepare("UPDATE daily_checklist SET checked_items = ? WHERE date = ?").run(JSON.stringify(items), today());
+  const result = await querySingle("SELECT 1 FROM daily_checklist WHERE date = ?", [today()]);
+  if (result) {
+    await run("UPDATE daily_checklist SET checked_items = ? WHERE date = ?", [JSON.stringify(items), today()]);
   } else {
-    db.prepare("INSERT INTO daily_checklist (date, checked_items) VALUES (?, ?)").run(today(), JSON.stringify(items));
+    await run("INSERT INTO daily_checklist (date, checked_items) VALUES (?, ?)", [today(), JSON.stringify(items)]);
   }
 }
 
 // ===== Pattern Cycles =====
 export async function getPatternCycles(patternId: string): Promise<number> {
-  const db = getDb();
-  const row = db.prepare("SELECT cycles FROM pattern_cycles WHERE pattern_id = ?").get(patternId) as { cycles: number } | undefined;
-  return row?.cycles ?? 0;
+  const result = await querySingle("SELECT cycles FROM pattern_cycles WHERE pattern_id = ?", [patternId]);
+  return result?.cycles ?? 0;
 }
 
 export async function incrementPatternCycle(patternId: string) {
-  const db = getDb();
-  const exists = db.prepare("SELECT 1 FROM pattern_cycles WHERE pattern_id = ?").get(patternId);
-  if (exists) {
-    db.prepare("UPDATE pattern_cycles SET cycles = cycles + 1, updated_at = CURRENT_TIMESTAMP WHERE pattern_id = ?").run(patternId);
+  const result = await querySingle("SELECT 1 FROM pattern_cycles WHERE pattern_id = ?", [patternId]);
+  if (result) {
+    await run("UPDATE pattern_cycles SET cycles = cycles + 1, updated_at = CURRENT_TIMESTAMP WHERE pattern_id = ?", [patternId]);
   } else {
-    db.prepare("INSERT INTO pattern_cycles (pattern_id, cycles) VALUES (?, 1)").run(patternId);
+    await run("INSERT INTO pattern_cycles (pattern_id, cycles) VALUES (?, 1)", [patternId]);
   }
 }
 
 // ===== Problem Progress =====
 export async function getProblemProgress(problemId: string) {
-  const db = getDb();
-  return db.prepare("SELECT * FROM problem_progress WHERE id = ?").get(problemId) as {
+  const result = await querySingle("SELECT * FROM problem_progress WHERE id = ?", [problemId]);
+  return result as {
     id: string;
     pattern_id: string;
     solved: number;
@@ -74,12 +68,14 @@ export async function getProblemProgress(problemId: string) {
 }
 
 export async function markProblemSolved(problemId: string, patternId: string, name: string, number: number, difficulty: string) {
-  const db = getDb();
-  const exists = db.prepare("SELECT 1 FROM problem_progress WHERE id = ?").get(problemId);
+  const exists = await querySingle("SELECT 1 FROM problem_progress WHERE id = ?", [problemId]);
   if (exists) {
-    db.prepare("UPDATE problem_progress SET solved = 1, cycles = cycles + 1, last_solved_at = CURRENT_TIMESTAMP WHERE id = ?").run(problemId);
+    await run("UPDATE problem_progress SET solved = 1, cycles = cycles + 1, last_solved_at = CURRENT_TIMESTAMP WHERE id = ?", [problemId]);
   } else {
-    db.prepare("INSERT INTO problem_progress (id, pattern_id, name, number, difficulty, solved, cycles, last_solved_at) VALUES (?, ?, ?, ?, ?, 1, 1, CURRENT_TIMESTAMP)").run(problemId, patternId, name, number, difficulty);
+    await run(
+      "INSERT INTO problem_progress (id, pattern_id, name, number, difficulty, solved, cycles, last_solved_at) VALUES (?, ?, ?, ?, ?, 1, 1, CURRENT_TIMESTAMP)",
+      [problemId, patternId, name, number, difficulty]
+    );
   }
   // Also increment pattern cycle
   await incrementPatternCycle(patternId);
@@ -89,9 +85,8 @@ export async function markProblemSolved(problemId: string, patternId: string, na
 
 // ===== Solved Problems Count =====
 export async function getSolvedCountByPattern(patternId: string): Promise<number> {
-  const db = getDb();
-  const row = db.prepare("SELECT COUNT(*) as count FROM problem_progress WHERE pattern_id = ? AND solved = 1").get(patternId) as { count: number } | undefined;
-  return row?.count ?? 0;
+  const result = await querySingle("SELECT COUNT(*) as count FROM problem_progress WHERE pattern_id = ? AND solved = 1", [patternId]);
+  return result?.count ?? 0;
 }
 
 // ===== Derivation Logs =====
@@ -108,9 +103,8 @@ export interface DerivationLog {
 }
 
 export async function getDerivationLog(problemId: string): Promise<DerivationLog | null> {
-  const db = getDb();
-  const row = db.prepare("SELECT * FROM derivation_logs WHERE problem_id = ?").get(problemId) as DerivationLog | undefined;
-  return row ?? null;
+  const result = await querySingle("SELECT * FROM derivation_logs WHERE problem_id = ?", [problemId]);
+  return result as DerivationLog | undefined ?? null;
 }
 
 export async function saveDerivationLogDraft(
@@ -118,11 +112,10 @@ export async function saveDerivationLogDraft(
   patternId: string,
   log: DerivationLog
 ) {
-  const db = getDb();
-  const exists = db.prepare("SELECT 1 FROM derivation_logs WHERE problem_id = ?").get(problemId);
+  const exists = await querySingle("SELECT 1 FROM derivation_logs WHERE problem_id = ?", [problemId]);
   if (exists) {
-    db.prepare(`
-      UPDATE derivation_logs SET
+    await run(
+      `UPDATE derivation_logs SET
         structural_necessity = ?,
         invariant_identification = ?,
         failure_modes = ?,
@@ -132,34 +125,36 @@ export async function saveDerivationLogDraft(
         time_to_derive = ?,
         time_to_code = ?,
         is_draft = 1
-      WHERE problem_id = ?
-    `).run(
-      log.structural_necessity,
-      log.invariant_identification,
-      log.failure_modes,
-      log.alternatives_rejected,
-      log.mental_image_clarity,
-      log.derivation_confidence,
-      log.time_to_derive,
-      log.time_to_code,
-      problemId
+      WHERE problem_id = ?`,
+      [
+        log.structural_necessity,
+        log.invariant_identification,
+        log.failure_modes,
+        log.alternatives_rejected,
+        log.mental_image_clarity,
+        log.derivation_confidence,
+        log.time_to_derive,
+        log.time_to_code,
+        problemId,
+      ]
     );
   } else {
-    db.prepare(`
-      INSERT INTO derivation_logs 
+    await run(
+      `INSERT INTO derivation_logs 
       (problem_id, pattern_id, structural_necessity, invariant_identification, failure_modes, alternatives_rejected, mental_image_clarity, derivation_confidence, time_to_derive, time_to_code, is_draft)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-    `).run(
-      problemId,
-      patternId,
-      log.structural_necessity,
-      log.invariant_identification,
-      log.failure_modes,
-      log.alternatives_rejected,
-      log.mental_image_clarity,
-      log.derivation_confidence,
-      log.time_to_derive,
-      log.time_to_code
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      [
+        problemId,
+        patternId,
+        log.structural_necessity,
+        log.invariant_identification,
+        log.failure_modes,
+        log.alternatives_rejected,
+        log.mental_image_clarity,
+        log.derivation_confidence,
+        log.time_to_derive,
+        log.time_to_code,
+      ]
     );
   }
 }
@@ -169,11 +164,10 @@ export async function saveDerivationLog(
   patternId: string,
   log: DerivationLog
 ) {
-  const db = getDb();
-  const exists = db.prepare("SELECT 1 FROM derivation_logs WHERE problem_id = ?").get(problemId);
+  const exists = await querySingle("SELECT 1 FROM derivation_logs WHERE problem_id = ?", [problemId]);
   if (exists) {
-    db.prepare(`
-      UPDATE derivation_logs SET
+    await run(
+      `UPDATE derivation_logs SET
         structural_necessity = ?,
         invariant_identification = ?,
         failure_modes = ?,
@@ -183,49 +177,49 @@ export async function saveDerivationLog(
         time_to_derive = ?,
         time_to_code = ?,
         is_draft = 0
-      WHERE problem_id = ?
-    `).run(
-      log.structural_necessity,
-      log.invariant_identification,
-      log.failure_modes,
-      log.alternatives_rejected,
-      log.mental_image_clarity,
-      log.derivation_confidence,
-      log.time_to_derive,
-      log.time_to_code,
-      problemId
+      WHERE problem_id = ?`,
+      [
+        log.structural_necessity,
+        log.invariant_identification,
+        log.failure_modes,
+        log.alternatives_rejected,
+        log.mental_image_clarity,
+        log.derivation_confidence,
+        log.time_to_derive,
+        log.time_to_code,
+        problemId,
+      ]
     );
   } else {
-    db.prepare(`
-      INSERT INTO derivation_logs 
+    await run(
+      `INSERT INTO derivation_logs 
       (problem_id, pattern_id, structural_necessity, invariant_identification, failure_modes, alternatives_rejected, mental_image_clarity, derivation_confidence, time_to_derive, time_to_code, is_draft)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-    `).run(
-      problemId,
-      patternId,
-      log.structural_necessity,
-      log.invariant_identification,
-      log.failure_modes,
-      log.alternatives_rejected,
-      log.mental_image_clarity,
-      log.derivation_confidence,
-      log.time_to_derive,
-      log.time_to_code
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      [
+        problemId,
+        patternId,
+        log.structural_necessity,
+        log.invariant_identification,
+        log.failure_modes,
+        log.alternatives_rejected,
+        log.mental_image_clarity,
+        log.derivation_confidence,
+        log.time_to_derive,
+        log.time_to_code,
+      ]
     );
   }
 }
 
 // ===== Sessions =====
 export async function startSession(patternId?: string) {
-  const db = getDb();
-  const result = db.prepare("INSERT INTO sessions (pattern_id, ccu_cost) VALUES (?, 60)").run(patternId ?? null);
+  const result = await run("INSERT INTO sessions (pattern_id, ccu_cost) VALUES (?, 60)", [patternId ?? null]);
   await addCCU("Started MSMW Session", 60);
   return result.lastInsertRowid as number;
 }
 
 export async function endSession(sessionId: number) {
-  const db = getDb();
-  db.prepare("UPDATE sessions SET ended_at = CURRENT_TIMESTAMP, completed = 1 WHERE id = ?").run(sessionId);
+  await run("UPDATE sessions SET ended_at = CURRENT_TIMESTAMP, completed = 1 WHERE id = ?", [sessionId]);
 }
 
 // ===== Review Queue (Spaced Repetition) =====
@@ -247,17 +241,17 @@ export async function getReviewQueue(): Promise<{
   interval_days: number;
   repetitions: number;
 }[]> {
-  const db = getDb();
   const today = new Date().toISOString().split("T")[0];
-  // Join with problem_progress to get names
-  return db.prepare(`
-    SELECT rq.problem_id, rq.pattern_id, pp.name, pp.number, pp.difficulty,
+  const result = await query(
+    `SELECT rq.problem_id, rq.pattern_id, pp.name, pp.number, pp.difficulty,
            rq.next_review_date, rq.interval_days, rq.repetitions
-    FROM review_queue rq
-    JOIN problem_progress pp ON rq.problem_id = pp.id
-    WHERE rq.next_review_date <= ?
-    ORDER BY rq.repetitions ASC, rq.next_review_date ASC
-  `).all(today) as any[];
+     FROM review_queue rq
+     JOIN problem_progress pp ON rq.problem_id = pp.id
+     WHERE rq.next_review_date <= ?
+     ORDER BY rq.repetitions ASC, rq.next_review_date ASC`,
+    [today]
+  );
+  return result.rows as any[];
 }
 
 export async function getUpcomingReviews(): Promise<{
@@ -267,25 +261,21 @@ export async function getUpcomingReviews(): Promise<{
   next_review_date: string;
   interval_days: number;
 }[]> {
-  const db = getDb();
   const today = new Date().toISOString().split("T")[0];
-  return db.prepare(`
-    SELECT rq.problem_id, rq.pattern_id, pp.name, rq.next_review_date, rq.interval_days
-    FROM review_queue rq
-    JOIN problem_progress pp ON rq.problem_id = pp.id
-    WHERE rq.next_review_date > ?
-    ORDER BY rq.next_review_date ASC
-    LIMIT 20
-  `).all(today) as any[];
+  const result = await query(
+    `SELECT rq.problem_id, rq.pattern_id, pp.name, rq.next_review_date, rq.interval_days
+     FROM review_queue rq
+     JOIN problem_progress pp ON rq.problem_id = pp.id
+     WHERE rq.next_review_date > ?
+     ORDER BY rq.next_review_date ASC
+     LIMIT 20`,
+    [today]
+  );
+  return result.rows as any[];
 }
 
 export async function scheduleReview(problemId: string, patternId: string, success: boolean = true) {
-  const db = getDb();
-  const row = db.prepare("SELECT * FROM review_queue WHERE problem_id = ?").get(problemId) as {
-    interval_days: number;
-    repetitions: number;
-    ease_factor: number;
-  } | undefined;
+  const row = await querySingle("SELECT * FROM review_queue WHERE problem_id = ?", [problemId]);
 
   if (row) {
     const newReps = success ? row.repetitions + 1 : Math.max(0, row.repetitions - 1);
@@ -293,20 +283,22 @@ export async function scheduleReview(problemId: string, patternId: string, succe
     const newInterval = INTERVALS[intervalIdx];
     const nextDate = nextReviewDate(newInterval);
 
-    db.prepare(`
-      UPDATE review_queue SET
+    await run(
+      `UPDATE review_queue SET
         next_review_date = ?,
         interval_days = ?,
         repetitions = ?,
         ease_factor = ?
-      WHERE problem_id = ?
-    `).run(nextDate, newInterval, newReps, row.ease_factor, problemId);
+      WHERE problem_id = ?`,
+      [nextDate, newInterval, newReps, row.ease_factor, problemId]
+    );
   } else {
     // First time scheduling
-    db.prepare(`
-      INSERT INTO review_queue (problem_id, pattern_id, next_review_date, interval_days, repetitions, ease_factor)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(problemId, patternId, nextReviewDate(1), 1, 0, 2.5);
+    await run(
+      `INSERT INTO review_queue (problem_id, pattern_id, next_review_date, interval_days, repetitions, ease_factor)
+      VALUES (?, ?, ?, ?, ?, ?)`,
+      [problemId, patternId, nextReviewDate(1), 1, 0, 2.5]
+    );
   }
 }
 
@@ -315,14 +307,13 @@ export async function getReviewStats(): Promise<{
   upcoming: number;
   totalScheduled: number;
 }> {
-  const db = getDb();
   const today = new Date().toISOString().split("T")[0];
-  const dueToday = db.prepare("SELECT COUNT(*) as count FROM review_queue WHERE next_review_date <= ?").get(today) as { count: number };
-  const upcoming = db.prepare("SELECT COUNT(*) as count FROM review_queue WHERE next_review_date > ?").get(today) as { count: number };
-  const totalScheduled = db.prepare("SELECT COUNT(*) as count FROM review_queue").get() as { count: number };
+  const dueToday = await querySingle("SELECT COUNT(*) as count FROM review_queue WHERE next_review_date <= ?", [today]);
+  const upcoming = await querySingle("SELECT COUNT(*) as count FROM review_queue WHERE next_review_date > ?", [today]);
+  const totalScheduled = await querySingle("SELECT COUNT(*) as count FROM review_queue");
   return {
-    dueToday: dueToday.count,
-    upcoming: upcoming.count,
-    totalScheduled: totalScheduled.count,
+    dueToday: dueToday?.count ?? 0,
+    upcoming: upcoming?.count ?? 0,
+    totalScheduled: totalScheduled?.count ?? 0,
   };
 }
