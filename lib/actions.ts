@@ -94,6 +94,127 @@ export async function getSolvedCountByPattern(patternId: string): Promise<number
   return row?.count ?? 0;
 }
 
+// ===== Derivation Logs =====
+export interface DerivationLog {
+  structural_necessity: string;
+  invariant_identification: string;
+  failure_modes: string;
+  alternatives_rejected: string;
+  mental_image_clarity: number;
+  derivation_confidence: number;
+  time_to_derive: number;
+  time_to_code: number;
+  is_draft?: number;
+}
+
+export async function getDerivationLog(problemId: string): Promise<DerivationLog | null> {
+  const db = getDb();
+  const row = db.prepare("SELECT * FROM derivation_logs WHERE problem_id = ?").get(problemId) as DerivationLog | undefined;
+  return row ?? null;
+}
+
+export async function saveDerivationLogDraft(
+  problemId: string,
+  patternId: string,
+  log: DerivationLog
+) {
+  const db = getDb();
+  const exists = db.prepare("SELECT 1 FROM derivation_logs WHERE problem_id = ?").get(problemId);
+  if (exists) {
+    db.prepare(`
+      UPDATE derivation_logs SET
+        structural_necessity = ?,
+        invariant_identification = ?,
+        failure_modes = ?,
+        alternatives_rejected = ?,
+        mental_image_clarity = ?,
+        derivation_confidence = ?,
+        time_to_derive = ?,
+        time_to_code = ?,
+        is_draft = 1
+      WHERE problem_id = ?
+    `).run(
+      log.structural_necessity,
+      log.invariant_identification,
+      log.failure_modes,
+      log.alternatives_rejected,
+      log.mental_image_clarity,
+      log.derivation_confidence,
+      log.time_to_derive,
+      log.time_to_code,
+      problemId
+    );
+  } else {
+    db.prepare(`
+      INSERT INTO derivation_logs 
+      (problem_id, pattern_id, structural_necessity, invariant_identification, failure_modes, alternatives_rejected, mental_image_clarity, derivation_confidence, time_to_derive, time_to_code, is_draft)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    `).run(
+      problemId,
+      patternId,
+      log.structural_necessity,
+      log.invariant_identification,
+      log.failure_modes,
+      log.alternatives_rejected,
+      log.mental_image_clarity,
+      log.derivation_confidence,
+      log.time_to_derive,
+      log.time_to_code
+    );
+  }
+}
+
+export async function saveDerivationLog(
+  problemId: string,
+  patternId: string,
+  log: DerivationLog
+) {
+  const db = getDb();
+  const exists = db.prepare("SELECT 1 FROM derivation_logs WHERE problem_id = ?").get(problemId);
+  if (exists) {
+    db.prepare(`
+      UPDATE derivation_logs SET
+        structural_necessity = ?,
+        invariant_identification = ?,
+        failure_modes = ?,
+        alternatives_rejected = ?,
+        mental_image_clarity = ?,
+        derivation_confidence = ?,
+        time_to_derive = ?,
+        time_to_code = ?,
+        is_draft = 0
+      WHERE problem_id = ?
+    `).run(
+      log.structural_necessity,
+      log.invariant_identification,
+      log.failure_modes,
+      log.alternatives_rejected,
+      log.mental_image_clarity,
+      log.derivation_confidence,
+      log.time_to_derive,
+      log.time_to_code,
+      problemId
+    );
+  } else {
+    db.prepare(`
+      INSERT INTO derivation_logs 
+      (problem_id, pattern_id, structural_necessity, invariant_identification, failure_modes, alternatives_rejected, mental_image_clarity, derivation_confidence, time_to_derive, time_to_code, is_draft)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+    `).run(
+      problemId,
+      patternId,
+      log.structural_necessity,
+      log.invariant_identification,
+      log.failure_modes,
+      log.alternatives_rejected,
+      log.mental_image_clarity,
+      log.derivation_confidence,
+      log.time_to_derive,
+      log.time_to_code
+    );
+  }
+}
+
 // ===== Sessions =====
 export async function startSession(patternId?: string) {
   const db = getDb();
@@ -105,4 +226,103 @@ export async function startSession(patternId?: string) {
 export async function endSession(sessionId: number) {
   const db = getDb();
   db.prepare("UPDATE sessions SET ended_at = CURRENT_TIMESTAMP, completed = 1 WHERE id = ?").run(sessionId);
+}
+
+// ===== Review Queue (Spaced Repetition) =====
+const INTERVALS = [1, 3, 7, 14, 30, 60, 90]; // days
+
+function nextReviewDate(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split("T")[0];
+}
+
+export async function getReviewQueue(): Promise<{
+  problem_id: string;
+  pattern_id: string;
+  name: string;
+  number: number;
+  difficulty: string;
+  next_review_date: string;
+  interval_days: number;
+  repetitions: number;
+}[]> {
+  const db = getDb();
+  const today = new Date().toISOString().split("T")[0];
+  // Join with problem_progress to get names
+  return db.prepare(`
+    SELECT rq.problem_id, rq.pattern_id, pp.name, pp.number, pp.difficulty,
+           rq.next_review_date, rq.interval_days, rq.repetitions
+    FROM review_queue rq
+    JOIN problem_progress pp ON rq.problem_id = pp.id
+    WHERE rq.next_review_date <= ?
+    ORDER BY rq.repetitions ASC, rq.next_review_date ASC
+  `).all(today) as any[];
+}
+
+export async function getUpcomingReviews(): Promise<{
+  problem_id: string;
+  pattern_id: string;
+  name: string;
+  next_review_date: string;
+  interval_days: number;
+}[]> {
+  const db = getDb();
+  const today = new Date().toISOString().split("T")[0];
+  return db.prepare(`
+    SELECT rq.problem_id, rq.pattern_id, pp.name, rq.next_review_date, rq.interval_days
+    FROM review_queue rq
+    JOIN problem_progress pp ON rq.problem_id = pp.id
+    WHERE rq.next_review_date > ?
+    ORDER BY rq.next_review_date ASC
+    LIMIT 20
+  `).all(today) as any[];
+}
+
+export async function scheduleReview(problemId: string, patternId: string, success: boolean = true) {
+  const db = getDb();
+  const row = db.prepare("SELECT * FROM review_queue WHERE problem_id = ?").get(problemId) as {
+    interval_days: number;
+    repetitions: number;
+    ease_factor: number;
+  } | undefined;
+
+  if (row) {
+    const newReps = success ? row.repetitions + 1 : Math.max(0, row.repetitions - 1);
+    const intervalIdx = Math.min(newReps, INTERVALS.length - 1);
+    const newInterval = INTERVALS[intervalIdx];
+    const nextDate = nextReviewDate(newInterval);
+
+    db.prepare(`
+      UPDATE review_queue SET
+        next_review_date = ?,
+        interval_days = ?,
+        repetitions = ?,
+        ease_factor = ?
+      WHERE problem_id = ?
+    `).run(nextDate, newInterval, newReps, row.ease_factor, problemId);
+  } else {
+    // First time scheduling
+    db.prepare(`
+      INSERT INTO review_queue (problem_id, pattern_id, next_review_date, interval_days, repetitions, ease_factor)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(problemId, patternId, nextReviewDate(1), 1, 0, 2.5);
+  }
+}
+
+export async function getReviewStats(): Promise<{
+  dueToday: number;
+  upcoming: number;
+  totalScheduled: number;
+}> {
+  const db = getDb();
+  const today = new Date().toISOString().split("T")[0];
+  const dueToday = db.prepare("SELECT COUNT(*) as count FROM review_queue WHERE next_review_date <= ?").get(today) as { count: number };
+  const upcoming = db.prepare("SELECT COUNT(*) as count FROM review_queue WHERE next_review_date > ?").get(today) as { count: number };
+  const totalScheduled = db.prepare("SELECT COUNT(*) as count FROM review_queue").get() as { count: number };
+  return {
+    dueToday: dueToday.count,
+    upcoming: upcoming.count,
+    totalScheduled: totalScheduled.count,
+  };
 }

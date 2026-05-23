@@ -4,7 +4,14 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { fullRoadmap } from "@/lib/roadmap";
 import { patterns } from "@/lib/patterns";
+import { problems } from "@/lib/problems/index";
 import { getPatternCycles, getSolvedCountByPattern } from "@/lib/actions";
+
+// Map problem names to IDs for correct practice links
+const problemNameToId = new Map<string, string>();
+for (const p of problems) {
+  problemNameToId.set(p.name.toLowerCase(), p.id);
+}
 import { Check, ChevronDown, ChevronUp, Target, TrendingUp, BookOpen } from "lucide-react";
 
 interface PatternStats {
@@ -55,7 +62,7 @@ export default function RoadmapPage() {
           <div className="text-xs font-mono text-zinc-500 uppercase tracking-wider mb-1">
             {activePhase === 1 ? "Phase 1: Foundation" : "Phase 2: Advanced"}
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">{activePhase === 1 ? "8-Week Roadmap" : "8-Week Roadmap"}</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{activePhase === 1 ? "Phase 1: Foundation (Weeks 1-8)" : "Phase 2: Advanced (Weeks 9-16)"}</h1>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -102,7 +109,7 @@ export default function RoadmapPage() {
                 <div className="w-full h-1.5 bg-neutral-900 rounded-full mt-3 overflow-hidden">
                   <div 
                     className="h-full bg-white transition-all rounded-full" 
-                    style={{ width: `${Math.min((stats.solved / totalProblems) * 100, 100)}%` }} 
+                    style={{ width: `${totalProblems > 0 ? Math.min((stats.solved / totalProblems) * 100, 100) : 0}%` }} 
                   />
                 </div>
               </div>
@@ -195,11 +202,11 @@ export default function RoadmapPage() {
                           </div>
                           {problem.number && (
                             <Link
-                              href={`/practice?problem=${problem.name.toLowerCase().replace(/\s+/g, "-")}`}
-                              className="text-[10px] text-zinc-500 hover:text-white border border-neutral-800 hover:border-zinc-600 px-2 py-1 rounded transition-colors"
-                            >
-                              Practice
-                            </Link>
+                               href={`/practice?problem=${problemNameToId.get(problem.name.toLowerCase()) || ""}`}
+                               className="text-[10px] text-zinc-500 hover:text-white border border-neutral-800 hover:border-zinc-600 px-2 py-1 rounded transition-colors"
+                             >
+                               Practice
+                             </Link>
                           )}
                         </div>
                       ))}

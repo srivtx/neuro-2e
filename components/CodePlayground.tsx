@@ -3,8 +3,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { problems, Problem, TestCase } from "@/lib/problems";
 import { patterns } from "@/lib/patterns";
-import { markProblemSolved } from "@/lib/actions";
-import { Play, RotateCcw, Check, Circle, AlertTriangle, ChevronDown, ChevronUp, Copy, Eye, EyeOff } from "lucide-react";
+import { markProblemSolved, saveDerivationLog, saveDerivationLogDraft, getDerivationLog, scheduleReview } from "@/lib/actions";
+import { Play, RotateCcw, Check, Circle, AlertTriangle, ChevronDown, ChevronUp, Copy, Eye, EyeOff, Lock, Unlock, Timer, Brain, FileText } from "lucide-react";
+import OnionReader from "./OnionReader";
+import PauseAndRender from "./PauseAndRender";
+import CCUWarning from "./CCUWarning";
 
 function arraysEqual(a: any, b: any): boolean {
   if (a === b) return true;
@@ -37,25 +40,118 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
   const [problemIdx, setProblemIdx] = useState(Math.max(initialIdx, 0));
   const [code, setCode] = useState("");
   const [testResults, setTestResults] = useState<{ case: TestCase; passed: boolean; actual: any; error?: string }[]>([]);
-  const [derivationDone, setDerivationDone] = useState(false);
-  const [mentalDone, setMentalDone] = useState(false);
+  const [derivationUnlocked, setDerivationUnlocked] = useState(false);
   const [showSolution, setShowSolution] = useState(false);
   const [showTests, setShowTests] = useState(true);
-  const [activeTab, setActiveTab] = useState<"description" | "editor" | "tests">("description");
+  const [activeTab, setActiveTab] = useState<"description" | "derivation" | "editor" | "tests">("description");
+  const [onionComplete, setOnionComplete] = useState(false);
+  const [isBreakActive, setIsBreakActive] = useState(false);
   const [lineNumbers, setLineNumbers] = useState<string[]>(["1"]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Derivation log state
+  const [structuralNecessity, setStructuralNecessity] = useState("");
+  const [invariantIdentification, setInvariantIdentification] = useState("");
+  const [failureModes, setFailureModes] = useState("");
+  const [alternativesRejected, setAlternativesRejected] = useState("");
+  const [mentalClarity, setMentalClarity] = useState(0);
+  const [derivationConfidence, setDerivationConfidence] = useState(0);
+  const [derivationTimer, setDerivationTimer] = useState(0);
+  const [derivationActive, setDerivationActive] = useState(false);
+  const [derivationSaved, setDerivationSaved] = useState(false);
+  const [loadingLog, setLoadingLog] = useState(true);
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
+
+  // Stuck mode: emergency scaffolding
+  const [stuckMode, setStuckMode] = useState(false);
+  const [stuckStep, setStuckStep] = useState<0 | 1 | 2>(0);
+  const [stuckTyped, setStuckTyped] = useState("");
+
+  // PauseAndRender callbacks — stable references so interval doesn't reset
+  const handleBreakStart = useCallback(() => setIsBreakActive(true), []);
+  const handleBreakEnd = useCallback(() => setIsBreakActive(false), []);
+
+  // Time-to-code tracking
+  const [codeTimer, setCodeTimer] = useState(0);
+  const [codeTimerActive, setCodeTimerActive] = useState(false);
+  const [codeTimerStarted, setCodeTimerStarted] = useState(false);
+
+  // Prevent duplicate DB writes when all tests pass
+  const savedToDbRef = useRef(false);
+
+  // Refs for timers so auto-save interval doesn't reset every second
+  const derivationTimerRef = useRef(derivationTimer);
+  const codeTimerRef = useRef(codeTimer);
+  useEffect(() => { derivationTimerRef.current = derivationTimer; }, [derivationTimer]);
+  useEffect(() => { codeTimerRef.current = codeTimer; }, [codeTimer]);
+
   const problem = problems[problemIdx];
   const pattern = patterns.find((p) => p.id === problem.patternId);
+
+  // Load derivation log from DB on problem change
+  useEffect(() => {
+    async function loadLog() {
+      setLoadingLog(true);
+      try {
+        const log = await getDerivationLog(problem.id);
+        if (log) {
+          setStructuralNecessity(log.structural_necessity);
+          setInvariantIdentification(log.invariant_identification);
+          setFailureModes(log.failure_modes);
+          setAlternativesRejected(log.alternatives_rejected);
+          setMentalClarity(log.mental_image_clarity);
+          setDerivationConfidence(log.derivation_confidence);
+          // Only unlock if it's a final (non-draft) submission
+          const isFinal = log.is_draft !== 1;
+          setDerivationUnlocked(isFinal);
+          setDerivationSaved(isFinal);
+        } else {
+          setStructuralNecessity("");
+          setInvariantIdentification("");
+          setFailureModes("");
+          setAlternativesRejected("");
+          setMentalClarity(0);
+          setDerivationConfidence(0);
+          setDerivationUnlocked(false);
+          setDerivationSaved(false);
+        }
+      } catch (err) {
+        console.error("Failed to load derivation log:", err);
+        // Reset to empty state so the UI doesn't hang
+        setDerivationUnlocked(false);
+        setDerivationSaved(false);
+      } finally {
+        setLoadingLog(false);
+      }
+    }
+    loadLog();
+  }, [problem.id]);
+
+  // Derivation timer (pauses during break)
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    if (derivationActive && !isBreakActive) {
+      interval = setInterval(() => {
+        setDerivationTimer((t) => t + 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [derivationActive, isBreakActive]);
 
   // Initialize code from starter
   useEffect(() => {
     setCode(problem.starterCode);
     setTestResults([]);
     setShowSolution(false);
-    setDerivationDone(false);
-    setMentalDone(false);
     setActiveTab("description");
+    setDerivationTimer(0);
+    setDerivationActive(false);
+    setCodeTimer(0);
+    setCodeTimerActive(false);
+    setCodeTimerStarted(false);
+    setDraftSavedAt(null);
+    setOnionComplete(false);
+    savedToDbRef.current = false;
   }, [problemIdx]);
 
   // Update line numbers
@@ -63,6 +159,39 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
     const lines = code.split("\n").length;
     setLineNumbers(Array.from({ length: Math.max(lines, 1) }, (_, i) => String(i + 1)));
   }, [code]);
+
+  // Auto-save derivation draft every 10s
+  useEffect(() => {
+    if (derivationSaved) return; // don't auto-save after final submit
+    const interval = setInterval(() => {
+      saveDerivationLogDraft(problem.id, problem.patternId, {
+        structural_necessity: structuralNecessity,
+        invariant_identification: invariantIdentification,
+        failure_modes: failureModes,
+        alternatives_rejected: alternativesRejected,
+        mental_image_clarity: mentalClarity,
+        derivation_confidence: derivationConfidence,
+        time_to_derive: derivationTimerRef.current,
+        time_to_code: codeTimerRef.current,
+      }).then(() => {
+        setDraftSavedAt(Date.now());
+      }).catch((err) => {
+        console.error("Auto-save draft failed:", err);
+      });
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [structuralNecessity, invariantIdentification, failureModes, alternativesRejected, mentalClarity, derivationConfidence, problem.id, problem.patternId, derivationSaved]);
+
+  // Code timer: start on first keystroke when editor is active (pauses during break)
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    if (codeTimerActive && !isBreakActive) {
+      interval = setInterval(() => {
+        setCodeTimer((t) => t + 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [codeTimerActive, isBreakActive]);
 
   const handleTab = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Tab") {
@@ -80,41 +209,28 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
   const runTests = useCallback(() => {
     const results: { case: TestCase; passed: boolean; actual: any; error?: string }[] = [];
 
+    // Extract function name from starter code: "function twoSum(nums, target) {"
+    const fnNameMatch = problem.starterCode.match(/function\s+(\w+)\s*\(/);
+    const fnName = fnNameMatch ? fnNameMatch[1] : null;
+
     for (const tc of problem.testCases) {
       try {
-        // Create an isolated evaluation context
         const userCode = code;
-        // We need to extract the function and run it
-        // Strategy: wrap in a function that returns the user's function
         const wrapper = new Function(`
           ${userCode}
-          // Try to detect the function name from common patterns
-          var fn = typeof twoSum === 'function' ? twoSum :
-                   typeof containsDuplicate === 'function' ? containsDuplicate :
-                   typeof maxArea === 'function' ? maxArea :
-                   typeof lengthOfLongestSubstring === 'function' ? lengthOfLongestSubstring :
-                   typeof isValid === 'function' ? isValid :
-                   typeof search === 'function' ? search :
-                   typeof reverseList === 'function' ? reverseList :
-                   typeof maxDepth === 'function' ? maxDepth :
-                   typeof climbStairs === 'function' ? climbStairs :
-                   typeof rob === 'function' ? rob :
-                   typeof uniquePaths === 'function' ? uniquePaths :
-                   typeof singleNumber === 'function' ? singleNumber :
-                   typeof subsets === 'function' ? subsets :
-                   typeof merge === 'function' ? merge :
-                   null;
-          return fn;
+          return typeof ${fnName} === 'function' ? ${fnName} : null;
         `);
 
         const fn = wrapper();
 
         if (!fn || typeof fn !== "function") {
-          results.push({ case: tc, passed: false, actual: null, error: "Could not find your function. Make sure you didn't rename it." });
+          results.push({ case: tc, passed: false, actual: null, error: fnName ? `Could not find "${fnName}". Make sure you didn't rename it.` : "Could not find your function. Make sure you didn't rename it." });
           continue;
         }
 
-        const actual = fn(...tc.args);
+        // Deep-clone args to prevent mutation between test cases
+        const clonedArgs = JSON.parse(JSON.stringify(tc.args));
+        const actual = fn(...clonedArgs);
         const passed = valueEqual(actual, tc.expectedValue);
         results.push({ case: tc, passed, actual });
       } catch (err: any) {
@@ -126,6 +242,66 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
     setShowTests(true);
     setActiveTab("tests");
   }, [code, problem]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isMeta = e.ctrlKey || e.metaKey;
+      const target = e.target as HTMLElement;
+      const isTyping = target.tagName === "TEXTAREA" || target.tagName === "INPUT" || target.isContentEditable;
+
+      // Ctrl/Cmd + Enter: Run tests (always works, even in code editor)
+      if (isMeta && e.key === "Enter" && derivationUnlocked) {
+        e.preventDefault();
+        runTests();
+        return;
+      }
+
+      // Escape: Hide solution
+      if (e.key === "Escape" && showSolution) {
+        e.preventDefault();
+        setShowSolution(false);
+        return;
+      }
+
+      // Don't intercept other shortcuts when typing in text fields
+      if (isTyping && target !== textareaRef.current) return;
+
+      // Ctrl/Cmd + /: Toggle solution
+      if (isMeta && e.key === "/") {
+        e.preventDefault();
+        setShowSolution((s) => !s);
+        return;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [derivationUnlocked, showSolution, runTests]);
+
+  const allPassed = testResults.length > 0 && testResults.every((r) => r.passed);
+
+  // Save to DB when all tests pass (once only)
+  useEffect(() => {
+    if (allPassed && problem && !savedToDbRef.current) {
+      savedToDbRef.current = true;
+      setCodeTimerActive(false);
+      markProblemSolved(problem.id, problem.patternId, problem.name, problem.number, problem.difficulty);
+      // Also update the derivation log with final time_to_code
+      saveDerivationLogDraft(problem.id, problem.patternId, {
+        structural_necessity: structuralNecessity,
+        invariant_identification: invariantIdentification,
+        failure_modes: failureModes,
+        alternatives_rejected: alternativesRejected,
+        mental_image_clarity: mentalClarity,
+        derivation_confidence: derivationConfidence,
+        time_to_derive: derivationTimer,
+        time_to_code: codeTimer,
+      }).catch((err) => console.error("Failed to save code time:", err));
+      // Schedule next review (spaced repetition)
+      scheduleReview(problem.id, problem.patternId, true).catch((err) => console.error("Failed to schedule review:", err));
+    }
+  }, [allPassed, problem, structuralNecessity, invariantIdentification, failureModes, alternativesRejected, mentalClarity, derivationConfidence, derivationTimer, codeTimer]);
 
   const nextProblem = () => {
     if (problemIdx < problems.length - 1) {
@@ -139,17 +315,53 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
     }
   };
 
-  const allPassed = testResults.length > 0 && testResults.every((r) => r.passed);
-
-  // Save to DB when all tests pass
-  useEffect(() => {
-    if (allPassed && problem) {
-      markProblemSolved(problem.id, problem.patternId, problem.name, problem.number, problem.difficulty);
+  const submitDerivation = async () => {
+    if (!structuralNecessity.trim() || !invariantIdentification.trim()) {
+      alert("Fill in Structural Necessity and Invariant Identification before submitting.");
+      return;
     }
-  }, [allPassed]);
+
+    try {
+      await saveDerivationLog(problem.id, problem.patternId, {
+        structural_necessity: structuralNecessity,
+        invariant_identification: invariantIdentification,
+        failure_modes: failureModes,
+        alternatives_rejected: alternativesRejected,
+        mental_image_clarity: mentalClarity,
+        derivation_confidence: derivationConfidence,
+        time_to_derive: derivationTimer,
+        time_to_code: 0,
+      });
+
+      setDerivationUnlocked(true);
+      setDerivationSaved(true);
+      setDerivationActive(false);
+      setActiveTab("editor");
+    } catch (err) {
+      console.error("Failed to save derivation log:", err);
+      alert("Failed to save derivation log. Check the console for details.");
+    }
+  };
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  };
+
+  if (loadingLog) {
+    return <div className="text-xs text-zinc-500 p-4">Loading derivation log...</div>;
+  }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-4">
+    <>
+      <PauseAndRender
+        isActive={derivationActive || codeTimerActive}
+        onBreakStart={handleBreakStart}
+        onBreakEnd={handleBreakEnd}
+      />
+      <div className="max-w-5xl mx-auto space-y-4">
+        <CCUWarning />
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -188,9 +400,40 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
         </div>
       </div>
 
+      {/* Derivation Status Bar */}
+      {!derivationUnlocked && (
+        <div className="block-elevated p-4 bg-amber-950/20 border-amber-900/50">
+          <div className="flex items-center gap-3">
+            <Lock size={18} className="text-amber-400" />
+            <div className="flex-1">
+              <div className="text-sm font-medium text-amber-300">Code Editor Locked</div>
+              <div className="text-xs text-amber-400/70">Complete the Derivation Log before writing code. This is mandatory per the protocol.</div>
+            </div>
+            <button
+              onClick={() => setActiveTab("derivation")}
+              className="px-4 py-2 bg-amber-500 text-black text-xs font-medium rounded-md hover:bg-amber-400 transition-colors"
+            >
+              Open Derivation Log
+            </button>
+          </div>
+        </div>
+      )}
+
+      {derivationSaved && (
+        <div className="block-elevated p-4 bg-emerald-950/20 border-emerald-900/50">
+          <div className="flex items-center gap-3">
+            <Unlock size={18} className="text-emerald-400" />
+            <div>
+              <div className="text-sm font-medium text-emerald-300">Derivation Log Complete</div>
+              <div className="text-xs text-emerald-400/70">Code editor is unlocked. You may now implement the solution.</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Mobile Tabs */}
       <div className="flex sm:hidden gap-2 border-b border-neutral-800 pb-2">
-        {(["description", "editor", "tests"] as const).map((tab) => (
+        {(["description", "derivation", "editor", "tests"] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -198,15 +441,25 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
               activeTab === tab ? "bg-white text-black border-white" : "border-neutral-800 text-zinc-400"
             }`}
           >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            {tab === "derivation" ? "Derive" : tab.charAt(0).toUpperCase() + tab.slice(1)}
           </button>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Left: Problem Description */}
-        <div className={`space-y-4 ${activeTab !== "description" ? "hidden sm:block" : ""}`}>
-          <div className="block-elevated p-5">
+        {/* Left: Problem Description + Derivation */}
+        <div className={`space-y-4 ${activeTab !== "description" && activeTab !== "derivation" ? "hidden sm:block" : ""}`}>
+          {/* Onion-Layer Reader */}
+          {!onionComplete && (
+            <OnionReader
+              problem={problem}
+              pattern={pattern}
+              onComplete={() => setOnionComplete(true)}
+            />
+          )}
+
+          {/* Problem Description — shown only after onion completes */}
+          <div className={`block-elevated p-5 ${!onionComplete ? "hidden" : activeTab === "derivation" ? "hidden sm:block" : ""}`}>
             <div className="text-xs font-mono text-zinc-500 uppercase mb-3">Description</div>
             <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-line">{problem.description}</p>
 
@@ -233,34 +486,157 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
             </div>
           </div>
 
-          {/* 3-Step Workflow */}
-          <div className="block-elevated p-5 space-y-3">
-            <div className="text-xs font-mono text-zinc-500 uppercase mb-1">Derivation Protocol</div>
-            <button
-              onClick={() => setDerivationDone(!derivationDone)}
-              className={`w-full flex items-center gap-3 p-3 rounded-md border transition-colors text-left ${
-                derivationDone ? "bg-emerald-950/20 border-emerald-900/50" : "bg-neutral-900/30 border-neutral-800 hover:border-zinc-600"
-              }`}
-            >
-              {derivationDone ? <Check size={16} className="text-emerald-400" /> : <Circle size={16} className="text-zinc-600" />}
-              <div className="flex-1">
-                <div className="text-sm font-medium">1. Derive Before Code</div>
-                <div className="text-xs text-zinc-500">Why must {pattern?.name || "this pattern"} be used? What is the invariant?</div>
+          {/* Derivation Log Form */}
+          <div className={`block-elevated p-5 ${activeTab === "description" ? "hidden sm:block" : ""}`}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Brain size={16} className="text-zinc-400" />
+                <span className="text-xs font-mono text-zinc-400 uppercase">Derivation Log</span>
               </div>
-            </button>
+              <div className="flex items-center gap-2">
+                {!derivationSaved && draftSavedAt && (
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-neutral-800 text-zinc-400 border border-neutral-700">Draft saved</span>
+                )}
+                {derivationSaved && (
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950/50 text-emerald-400 border border-emerald-900">Saved</span>
+                )}
+              </div>
+            </div>
 
-            <button
-              onClick={() => setMentalDone(!mentalDone)}
-              className={`w-full flex items-center gap-3 p-3 rounded-md border transition-colors text-left ${
-                mentalDone ? "bg-emerald-950/20 border-emerald-900/50" : "bg-neutral-900/30 border-neutral-800 hover:border-zinc-600"
-              }`}
-            >
-              {mentalDone ? <Check size={16} className="text-emerald-400" /> : <Circle size={16} className="text-zinc-600" />}
-              <div className="flex-1">
-                <div className="text-sm font-medium">2. Mental Image Check</div>
-                <div className="text-xs text-zinc-500">Close eyes. Can you trace the algorithm without code?</div>
+            {/* Timer */}
+            <div className="flex items-center justify-between p-3 bg-neutral-900/50 border border-neutral-800 rounded-md mb-4">
+              <div className="flex items-center gap-2">
+                <Timer size={14} className="text-zinc-500" />
+                <span className="text-xs text-zinc-400">Derivation Time</span>
               </div>
-            </button>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-mono font-bold">{formatTime(derivationTimer)}</span>
+                {!derivationSaved && (
+                  <button
+                    onClick={() => setDerivationActive(!derivationActive)}
+                    className={`px-3 py-1 text-[10px] rounded border transition-colors ${
+                      derivationActive ? "bg-amber-950/50 text-amber-400 border-amber-900" : "border-neutral-700 text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    {derivationActive ? "Pause" : "Start Timer"}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {/* Structural Necessity */}
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                  1. Structural Necessity <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  value={structuralNecessity}
+                  onChange={(e) => setStructuralNecessity(e.target.value)}
+                  placeholder="Why MUST this pattern be used? Derive from first principles. What property of the problem makes this approach necessary rather than merely sufficient?"
+                  className="w-full p-3 bg-neutral-900/50 border border-neutral-800 rounded-md text-sm text-zinc-300 placeholder:text-zinc-600 resize-none focus:border-zinc-600 focus:outline-none"
+                  rows={3}
+                  disabled={derivationSaved}
+                />
+              </div>
+
+              {/* Invariant Identification */}
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                  2. Invariant Identification <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  value={invariantIdentification}
+                  onChange={(e) => setInvariantIdentification(e.target.value)}
+                  placeholder="What property remains TRUE at every step of the algorithm? This is the load-bearing wall. If the invariant breaks, the algorithm collapses."
+                  className="w-full p-3 bg-neutral-900/50 border border-neutral-800 rounded-md text-sm text-zinc-300 placeholder:text-zinc-600 resize-none focus:border-zinc-600 focus:outline-none"
+                  rows={3}
+                  disabled={derivationSaved}
+                />
+              </div>
+
+              {/* Failure Mode Analysis */}
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                  3. Failure Mode Analysis
+                </label>
+                <textarea
+                  value={failureModes}
+                  onChange={(e) => setFailureModes(e.target.value)}
+                  placeholder="When would this pattern FAIL to solve the problem? What constraints would break it?"
+                  className="w-full p-3 bg-neutral-900/50 border border-neutral-800 rounded-md text-sm text-zinc-300 placeholder:text-zinc-600 resize-none focus:border-zinc-600 focus:outline-none"
+                  rows={2}
+                  disabled={derivationSaved}
+                />
+              </div>
+
+              {/* Alternative Pathways */}
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                  4. Alternative Pathways Rejected
+                </label>
+                <textarea
+                  value={alternativesRejected}
+                  onChange={(e) => setAlternativesRejected(e.target.value)}
+                  placeholder="What other approaches did you consider and why did you reject them?"
+                  className="w-full p-3 bg-neutral-900/50 border border-neutral-800 rounded-md text-sm text-zinc-300 placeholder:text-zinc-600 resize-none focus:border-zinc-600 focus:outline-none"
+                  rows={2}
+                  disabled={derivationSaved}
+                />
+              </div>
+
+              {/* Ratings */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-2">Mental Image Clarity (1-5)</label>
+                  <div className="flex gap-2">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => !derivationSaved && setMentalClarity(n)}
+                        className={`w-8 h-8 rounded-md border text-xs font-medium transition-colors ${
+                          mentalClarity === n
+                            ? "bg-white text-black border-white"
+                            : "border-neutral-800 text-zinc-500 hover:border-zinc-600"
+                        }`}
+                        disabled={derivationSaved}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-2">Derivation Confidence (1-5)</label>
+                  <div className="flex gap-2">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => !derivationSaved && setDerivationConfidence(n)}
+                        className={`w-8 h-8 rounded-md border text-xs font-medium transition-colors ${
+                          derivationConfidence === n
+                            ? "bg-white text-black border-white"
+                            : "border-neutral-800 text-zinc-500 hover:border-zinc-600"
+                        }`}
+                        disabled={derivationSaved}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Submit */}
+              {!derivationSaved && (
+                <button
+                  onClick={submitDerivation}
+                  className="w-full py-2.5 bg-white text-black text-sm font-medium rounded-md hover:bg-zinc-200 transition-colors flex items-center justify-center gap-2"
+                >
+                  <FileText size={14} /> Submit Derivation & Unlock Code
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -273,7 +649,10 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
                 <div className="w-2.5 h-2.5 rounded-full bg-neutral-700" />
                 <span className="text-xs text-zinc-400 font-mono">solution.js</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
+                {codeTimerStarted && (
+                  <span className="text-xs font-mono text-zinc-500">{formatTime(codeTimer)}</span>
+                )}
                 <button
                   onClick={() => setCode(problem.starterCode)}
                   className="flex items-center gap-1 text-xs text-zinc-500 hover:text-white transition-colors"
@@ -283,7 +662,6 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
               </div>
             </div>
             <div className="flex">
-              {/* Line Numbers */}
               <div className="py-3 px-2 bg-neutral-950 border-r border-neutral-800 text-right select-none min-w-[40px]">
                 {lineNumbers.map((n) => (
                   <div key={n} className="text-xs text-zinc-600 font-mono leading-6">{n}</div>
@@ -292,10 +670,17 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
               <textarea
                 ref={textareaRef}
                 value={code}
-                onChange={(e) => setCode(e.target.value)}
+                onChange={(e) => {
+                  setCode(e.target.value);
+                  if (!codeTimerStarted && derivationUnlocked) {
+                    setCodeTimerStarted(true);
+                    setCodeTimerActive(true);
+                  }
+                }}
                 onKeyDown={handleTab}
                 className="flex-1 p-3 bg-transparent text-zinc-300 font-mono text-sm resize-none outline-none leading-6 min-h-[320px]"
                 spellCheck={false}
+                disabled={!derivationUnlocked}
               />
             </div>
           </div>
@@ -304,7 +689,8 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
           <div className="flex items-center gap-3">
             <button
               onClick={runTests}
-              className="flex-1 py-2.5 bg-white text-black text-sm font-medium rounded-md hover:bg-zinc-200 transition-colors flex items-center justify-center gap-2"
+              disabled={!derivationUnlocked}
+              className="flex-1 py-2.5 bg-white text-black text-sm font-medium rounded-md hover:bg-zinc-200 transition-colors flex items-center justify-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed"
             >
               <Play size={16} /> Run Tests
             </button>
@@ -316,6 +702,110 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
               {showSolution ? "Hide Solution" : "Reveal Solution"}
             </button>
           </div>
+          <div className="flex items-center justify-center gap-4 text-[10px] text-zinc-600">
+            <span>Ctrl+Enter to run</span>
+            <span>·</span>
+            <span>Ctrl+/ to toggle solution</span>
+            <span>·</span>
+            <span>Esc to hide</span>
+          </div>
+
+          {/* Stuck Emergency Protocol */}
+          {derivationUnlocked && !allPassed && (
+            <div className="border border-neutral-800 rounded-md overflow-hidden">
+              {!stuckMode ? (
+                <button
+                  onClick={() => { setStuckMode(true); setStuckStep(0); setStuckTyped(""); }}
+                  className="w-full py-2 text-xs text-zinc-500 hover:text-amber-400 hover:bg-amber-950/10 transition-colors flex items-center justify-center gap-2"
+                >
+                  <AlertTriangle size={12} /> Stuck? Emergency Protocol
+                </button>
+              ) : (
+                <div className="p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-mono text-amber-500 uppercase">Emergency Protocol</div>
+                    <button
+                      onClick={() => { setStuckMode(false); setStuckStep(0); }}
+                      className="text-[10px] text-zinc-500 hover:text-white"
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  {stuckStep === 0 && (
+                    <>
+                      <p className="text-xs text-zinc-400">
+                        You are stuck. Do not jump to the solution. The protocol is:
+                      </p>
+                      <ol className="text-xs text-zinc-400 list-decimal list-inside space-y-1">
+                        <li>Read the pattern trigger and template below.</li>
+                        <li>Hide it and type the template from memory.</li>
+                        <li>Only then you may view hints.</li>
+                      </ol>
+                      {pattern && (
+                        <div className="p-3 bg-neutral-900/50 border border-neutral-800 rounded-md">
+                          <div className="text-[10px] font-mono text-zinc-500 uppercase mb-1">Trigger</div>
+                          <div className="text-xs text-zinc-300 mb-2">{pattern.trigger}</div>
+                          <div className="text-[10px] font-mono text-zinc-500 uppercase mb-1">Template</div>
+                          <pre className="text-xs font-mono text-zinc-300 whitespace-pre-wrap">{pattern.template}</pre>
+                        </div>
+                      )}
+                      <button
+                        onClick={() => setStuckStep(1)}
+                        className="w-full py-2 bg-amber-500 text-black text-xs font-medium rounded-md hover:bg-amber-400 transition-colors"
+                      >
+                        Hide & Type From Memory
+                      </button>
+                    </>
+                  )}
+
+                  {stuckStep === 1 && (
+                    <>
+                      <p className="text-xs text-zinc-400">
+                        The template is hidden. Type everything you remember. Do not peek.
+                      </p>
+                      <textarea
+                        value={stuckTyped}
+                        onChange={(e) => setStuckTyped(e.target.value)}
+                        placeholder="// Type the pattern template from memory..."
+                        className="w-full p-3 bg-neutral-900/50 border border-neutral-800 rounded-md text-xs font-mono text-zinc-300 placeholder:text-zinc-600 resize-none focus:border-zinc-600 focus:outline-none"
+                        rows={6}
+                      />
+                      <button
+                        onClick={() => setStuckStep(2)}
+                        disabled={!stuckTyped.trim()}
+                        className="w-full py-2 bg-white text-black text-xs font-medium rounded-md hover:bg-zinc-200 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        I Typed From Memory — Check & Reveal Hints
+                      </button>
+                    </>
+                  )}
+
+                  {stuckStep === 2 && pattern && (
+                    <>
+                      <div className="p-3 bg-neutral-900/50 border border-neutral-800 rounded-md space-y-3">
+                        <div className="text-[10px] font-mono text-zinc-500 uppercase">What You Typed</div>
+                        <pre className="text-xs font-mono text-zinc-400 whitespace-pre-wrap">{stuckTyped || "(empty)"}</pre>
+                        <div className="border-t border-neutral-800 pt-2">
+                          <div className="text-[10px] font-mono text-zinc-500 uppercase mb-1">Actual Template</div>
+                          <pre className="text-xs font-mono text-zinc-300 whitespace-pre-wrap">{pattern.template}</pre>
+                        </div>
+                      </div>
+                      <p className="text-xs text-zinc-400">
+                        Compare line by line. What did you miss? Gaps reveal what has not yet compiled into procedural memory.
+                      </p>
+                      <button
+                        onClick={() => { setShowSolution(true); setStuckMode(false); setStuckStep(0); }}
+                        className="w-full py-2 border border-neutral-800 text-zinc-400 text-xs rounded-md hover:border-zinc-600 hover:text-white transition-colors"
+                      >
+                        Reveal Solution
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Test Results */}
           {(testResults.length > 0 || activeTab === "tests") && (
@@ -390,5 +880,6 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
         </div>
       </div>
     </div>
+    </>
   );
 }

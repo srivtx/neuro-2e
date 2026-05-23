@@ -7,8 +7,7 @@ npm-debug.log*
 out/
 *.tsbuildinfo
 
-# Database (optional - remove this line if you want to push your DB)
-data/*.db
+# Keep SQLite DB in repo for schema seeding
 data/*.db-shm
 data/*.db-wal
 
