@@ -87,6 +87,13 @@ export async function markProblemSolved(problemId: string, patternId: string, na
   await addCCU(`Solved: ${name}`, 15);
 }
 
+// ===== Solved Problems Count =====
+export async function getSolvedCountByPattern(patternId: string): Promise<number> {
+  const db = getDb();
+  const row = db.prepare("SELECT COUNT(*) as count FROM problem_progress WHERE pattern_id = ? AND solved = 1").get(patternId) as { count: number } | undefined;
+  return row?.count ?? 0;
+}
+
 // ===== Sessions =====
 export async function startSession(patternId?: string) {
   const db = getDb();

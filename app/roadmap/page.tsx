@@ -4,22 +4,31 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { fullRoadmap } from "@/lib/roadmap";
 import { patterns } from "@/lib/patterns";
-import { getPatternCycles } from "@/lib/actions";
+import { getPatternCycles, getSolvedCountByPattern } from "@/lib/actions";
 import { Check, ChevronDown, ChevronUp, Target, TrendingUp, BookOpen } from "lucide-react";
+
+interface PatternStats {
+  cycles: number;
+  solved: number;
+}
 
 export default function RoadmapPage() {
   const [openWeek, setOpenWeek] = useState<number | null>(1);
   const [activePhase, setActivePhase] = useState<1 | 2>(1);
-  const [patternCycles, setPatternCycles] = useState<Record<string, number>>({});
+  const [patternStats, setPatternStats] = useState<Record<string, PatternStats>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
-      const cycles: Record<string, number> = {};
+      const stats: Record<string, PatternStats> = {};
       for (const p of patterns) {
-        cycles[p.id] = await getPatternCycles(p.id);
+        const [cycles, solved] = await Promise.all([
+          getPatternCycles(p.id),
+          getSolvedCountByPattern(p.id),
+        ]);
+        stats[p.id] = { cycles, solved };
       }
-      setPatternCycles(cycles);
+      setPatternStats(stats);
       setLoading(false);
     }
     load();
@@ -74,19 +83,22 @@ export default function RoadmapPage() {
           <TrendingUp size={16} className="text-zinc-400" />
           <span className="text-xs font-mono text-zinc-400 uppercase">Pattern Progress</span>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {patterns.slice(0, 8).map((p) => {
-            const cycles = patternCycles[p.id] ?? 0;
-            const stage = getStage(cycles);
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          {patterns.map((p) => {
+            const stats = patternStats[p.id] ?? { cycles: 0, solved: 0 };
+            const stage = getStage(stats.cycles);
             return (
               <div key={p.id} className="block-square p-3">
                 <div className="text-xs font-medium text-zinc-300">{p.name}</div>
                 <div className="flex items-center justify-between mt-1">
                   <span className={`text-[10px] ${stage.color}`}>{stage.label}</span>
-                  <span className="text-[10px] text-zinc-600">{cycles}/100</span>
+                </div>
+                <div className="flex items-center justify-between mt-1">
+                  <span className="text-[10px] text-zinc-600">{stats.solved} solved</span>
+                  <span className="text-[10px] text-zinc-600">{stats.cycles}/100 cycles</span>
                 </div>
                 <div className="w-full h-1 bg-neutral-900 rounded-full mt-2 overflow-hidden">
-                  <div className="h-full bg-white transition-all" style={{ width: `${Math.min((cycles / 100) * 100, 100)}%` }} />
+                  <div className="h-full bg-white transition-all" style={{ width: `${Math.min((stats.cycles / 100) * 100, 100)}%` }} />
                 </div>
               </div>
             );
@@ -98,8 +110,8 @@ export default function RoadmapPage() {
       <div className="space-y-3">
         {displayedWeeks.map((week) => {
           const isOpen = openWeek === week.week;
-          const cycles = patternCycles[week.patternId] ?? 0;
-          const stage = getStage(cycles);
+          const stats = patternStats[week.patternId] ?? { cycles: 0, solved: 0 };
+          const stage = getStage(stats.cycles);
           const isReview = week.patternId === "review";
 
           return (
@@ -113,11 +125,11 @@ export default function RoadmapPage() {
               >
                 <div className="flex items-center gap-3">
                   <div className={`w-6 h-6 rounded-sm flex items-center justify-center text-[10px] font-bold ${
-                    cycles >= 100 ? "bg-emerald-900/50 text-emerald-400 border border-emerald-900" :
-                    cycles >= 50 ? "bg-amber-900/50 text-amber-400 border border-amber-900" :
+                    stats.cycles >= 100 ? "bg-emerald-900/50 text-emerald-400 border border-emerald-900" :
+                    stats.cycles >= 50 ? "bg-amber-900/50 text-amber-400 border border-amber-900" :
                     "bg-neutral-800 text-zinc-400 border border-neutral-700"
                   }`}>
-                    {cycles >= 100 ? <Check size={14} /> : week.week}
+                    {stats.cycles >= 100 ? <Check size={14} /> : week.week}
                   </div>
                   <div>
                     <div className="font-medium text-sm">{week.patternName}</div>
