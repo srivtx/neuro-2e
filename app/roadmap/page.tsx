@@ -154,7 +154,7 @@ export default function RoadmapPage() {
                           </div>
                           {problem.number && (
                             <Link
-                              href={`/practice`}
+                              href={`/practice?problem=${problem.name.toLowerCase().replace(/\s+/g, "-")}`}
                               className="text-[10px] text-zinc-500 hover:text-white border border-neutral-800 hover:border-zinc-600 px-2 py-1 rounded transition-colors"
                             >
                               Practice

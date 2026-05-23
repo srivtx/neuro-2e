@@ -28,8 +28,13 @@ function valueEqual(a: any, b: any): boolean {
   return false;
 }
 
-export default function CodePlayground() {
-  const [problemIdx, setProblemIdx] = useState(0);
+interface CodePlaygroundProps {
+  initialProblemId?: string;
+}
+
+export default function CodePlayground({ initialProblemId }: CodePlaygroundProps) {
+  const initialIdx = initialProblemId ? problems.findIndex((p) => p.id === initialProblemId) : 0;
+  const [problemIdx, setProblemIdx] = useState(Math.max(initialIdx, 0));
   const [code, setCode] = useState("");
   const [testResults, setTestResults] = useState<{ case: TestCase; passed: boolean; actual: any; error?: string }[]>([]);
   const [derivationDone, setDerivationDone] = useState(false);
