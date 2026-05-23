@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { patterns } from "@/lib/patterns";
 import { CodeBlock } from "@/components/CodeBlock";
-import { Play, RotateCcw, Zap, CheckCircle, TrendingUp, Clock, AlertTriangle, Skull } from "lucide-react";
+import { Play, RotateCcw, Zap, TrendingUp, Clock, AlertTriangle, Skull, ChevronRight, BatteryWarning } from "lucide-react";
 import { getPatternCycles, getTodayCCU, addCCU } from "@/lib/actions";
 import { useSession } from "@/components/SessionProvider";
 import CCUWarning from "@/components/CCUWarning";
@@ -13,8 +13,7 @@ export default function DashboardPage() {
   const { active: msmwActive, elapsed: msmwTime, startMSMW, stopMSMW, hardMode } = useSession();
   const [currentPatternIndex, setCurrentPatternIndex] = useState(0);
   const [cycleCount, setCycleCount] = useState(0);
-  const [showSkeleton, setShowSkeleton] = useState(true);
-  const [showFlesh, setShowFlesh] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
   const [emergencyMode, setEmergencyMode] = useState(false);
   const [todayCCU, setTodayCCU] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -83,23 +82,22 @@ export default function DashboardPage() {
   const canStartMSMW = todayCCU + 60 <= 100;
   const ccuRemaining = 100 - todayCCU;
 
-  // Explicit color map because Tailwind JIT cannot parse dynamic class names
-  const colorMap: Record<string, { bg: string; text: string; border: string; progress: string }> = {
-    emerald: { bg: "bg-emerald-900/30", text: "text-emerald-400", border: "border-emerald-800/50", progress: "bg-emerald-400" },
-    sky: { bg: "bg-sky-900/30", text: "text-sky-400", border: "border-sky-800/50", progress: "bg-sky-400" },
-    amber: { bg: "bg-amber-900/30", text: "text-amber-400", border: "border-amber-800/50", progress: "bg-amber-400" },
-    rose: { bg: "bg-rose-900/30", text: "text-rose-400", border: "border-rose-800/50", progress: "bg-rose-400" },
-    violet: { bg: "bg-violet-900/30", text: "text-violet-400", border: "border-violet-800/50", progress: "bg-violet-400" },
-    cyan: { bg: "bg-cyan-900/30", text: "text-cyan-400", border: "border-cyan-800/50", progress: "bg-cyan-400" },
-    orange: { bg: "bg-orange-900/30", text: "text-orange-400", border: "border-orange-800/50", progress: "bg-orange-400" },
-    pink: { bg: "bg-pink-900/30", text: "text-pink-400", border: "border-pink-800/50", progress: "bg-pink-400" },
-    teal: { bg: "bg-teal-900/30", text: "text-teal-400", border: "border-teal-800/50", progress: "bg-teal-400" },
-    indigo: { bg: "bg-indigo-900/30", text: "text-indigo-400", border: "border-indigo-800/50", progress: "bg-indigo-400" },
-    lime: { bg: "bg-lime-900/30", text: "text-lime-400", border: "border-lime-800/50", progress: "bg-lime-400" },
-    fuchsia: { bg: "bg-fuchsia-900/30", text: "text-fuchsia-400", border: "border-fuchsia-800/50", progress: "bg-fuchsia-400" },
-    yellow: { bg: "bg-yellow-900/30", text: "text-yellow-400", border: "border-yellow-800/50", progress: "bg-yellow-400" },
-    slate: { bg: "bg-slate-900/30", text: "text-slate-400", border: "border-slate-800/50", progress: "bg-slate-400" },
-    zinc: { bg: "bg-zinc-900/30", text: "text-zinc-400", border: "border-zinc-800/50", progress: "bg-zinc-400" },
+  const colorMap: Record<string, { bg: string; text: string; border: string }> = {
+    emerald: { bg: "bg-emerald-900/30", text: "text-emerald-400", border: "border-emerald-800/50" },
+    sky: { bg: "bg-sky-900/30", text: "text-sky-400", border: "border-sky-800/50" },
+    amber: { bg: "bg-amber-900/30", text: "text-amber-400", border: "border-amber-800/50" },
+    rose: { bg: "bg-rose-900/30", text: "text-rose-400", border: "border-rose-800/50" },
+    violet: { bg: "bg-violet-900/30", text: "text-violet-400", border: "border-violet-800/50" },
+    cyan: { bg: "bg-cyan-900/30", text: "text-cyan-400", border: "border-cyan-800/50" },
+    orange: { bg: "bg-orange-900/30", text: "text-orange-400", border: "border-orange-800/50" },
+    pink: { bg: "bg-pink-900/30", text: "text-pink-400", border: "border-pink-800/50" },
+    teal: { bg: "bg-teal-900/30", text: "text-teal-400", border: "border-teal-800/50" },
+    indigo: { bg: "bg-indigo-900/30", text: "text-indigo-400", border: "border-indigo-800/50" },
+    lime: { bg: "bg-lime-900/30", text: "text-lime-400", border: "border-lime-800/50" },
+    fuchsia: { bg: "bg-fuchsia-900/30", text: "text-fuchsia-400", border: "border-fuchsia-800/50" },
+    yellow: { bg: "bg-yellow-900/30", text: "text-yellow-400", border: "border-yellow-800/50" },
+    slate: { bg: "bg-slate-900/30", text: "text-slate-400", border: "border-slate-800/50" },
+    zinc: { bg: "bg-zinc-900/30", text: "text-zinc-400", border: "border-zinc-800/50" },
   };
   const pc = colorMap[pattern.color] || colorMap.zinc;
 
@@ -107,132 +105,70 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <CCUWarning />
 
-      {/* Header: Today's Mission */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="text-xs font-mono text-zinc-500 uppercase tracking-wider mb-1">Today's Pattern</div>
-          <h1 className="text-3xl font-bold tracking-tight">{pattern.name}</h1>
-          <div className="flex items-center gap-2 mt-1">
-            <span className={`text-xs px-2 py-0.5 rounded ${pc.bg} ${pc.text} border ${pc.border}`}>
-              {pattern.tag}
-            </span>
-            <span className="text-xs text-zinc-500">{loading ? "..." : `${cycleCount} / 100 cycles`}</span>
-            <span className="text-xs text-zinc-600">· Today: {todayCCU} CCU</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setEmergencyMode(true)}
-            className="px-3 py-2 text-xs font-medium bg-amber-950/50 border border-amber-900 text-amber-400 rounded-md hover:bg-amber-900/50 transition-colors flex items-center gap-1.5"
-          >
-            <AlertTriangle size={14} /> Word-Blur
-          </button>
-        </div>
-      </div>
+      <style>{`
+        @keyframes ambient-pulse {
+          0%, 100% { opacity: 0.15; }
+          50% { opacity: 0.25; }
+        }
+        @keyframes live-breathe {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.5); opacity: 0.5; }
+        }
+      `}</style>
 
-      {/* Progress Bar */}
-      <div className="block-square p-4">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs text-zinc-400">Pattern Snap Progress</span>
-          <span className="text-xs font-mono text-zinc-300">{cycleStage}</span>
-        </div>
-        <div className="w-full h-2 bg-neutral-900 rounded-full overflow-hidden border border-neutral-800">
-          <div
-            className="h-full bg-white transition-all duration-500"
-            style={{ width: `${Math.min((cycleCount / 100) * 100, 100)}%` }}
-          />
-        </div>
-      </div>
+      {/* === MISSION CONTROL HERO === */}
+      <div className="relative">
+        {/* Ambient glow behind card */}
+        <div
+          className="absolute -inset-1 rounded-xl blur-2xl transition-colors duration-700 pointer-events-none"
+          style={{
+            background: `radial-gradient(circle at 50% 50%, var(--glow-color, rgba(255,255,255,0.03)), transparent 70%)`,
+            opacity: 0.6,
+          }}
+        />
+        <div className="block-elevated p-6 lg:p-8 relative">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+            {/* Left: Pattern Identity */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-3">
+                <span className={`text-[10px] px-2 py-0.5 rounded border ${pc.bg} ${pc.text} ${pc.border} font-medium uppercase tracking-wider`}>
+                  {pattern.tag}
+                </span>
+                <span className="text-[10px] font-mono text-zinc-600">
+                  {loading ? "..." : `${cycleCount} / 100 cycles · ${cycleStage}`}
+                </span>
+              </div>
+              <h1 className="text-3xl lg:text-5xl font-bold tracking-tight mb-3 leading-none">{pattern.name}</h1>
+              <p className="text-sm text-zinc-400 max-w-xl leading-relaxed">{pattern.trigger}</p>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: Pattern Code (Code First - Bottom Up) */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Zap size={16} className="text-zinc-400" />
-            <span className="text-xs font-mono text-zinc-400 uppercase">Template</span>
-          </div>
-
-          <CodeBlock code={pattern.template} filename={`${pattern.id}.template.js`} />
-
-          {/* Onion Layer Toggle */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => { setShowSkeleton(true); setShowFlesh(false); }}
-              className={`px-3 py-1.5 text-xs rounded-md border transition-colors ${
-                showSkeleton && !showFlesh ? "bg-white text-black border-white" : "border-neutral-800 text-zinc-400 hover:text-white"
-              }`}
-            >
-              Skeleton
-            </button>
-            <button
-              onClick={() => setShowFlesh(true)}
-              className={`px-3 py-1.5 text-xs rounded-md border transition-colors ${
-                showFlesh ? "bg-white text-black border-white" : "border-neutral-800 text-zinc-400 hover:text-white"
-              }`}
-            >
-              Logic & Flesh
-            </button>
-          </div>
-
-          {showSkeleton && !showFlesh && (
-            <div className="block-square p-4 space-y-3">
-              <div className="text-xs font-mono text-zinc-500 uppercase">Trigger</div>
-              <p className="text-sm text-zinc-300">{pattern.trigger}</p>
-              <div className="text-xs font-mono text-zinc-500 uppercase mt-4">Invariant</div>
-              <p className="text-sm text-zinc-300">{pattern.invariant}</p>
-            </div>
-          )}
-
-          {showFlesh && (
-            <div className="block-square p-4 space-y-3">
-              <div className="text-xs font-mono text-zinc-500 uppercase">Complexity</div>
-              <p className="text-sm text-zinc-300 font-mono">{pattern.complexity}</p>
-              <div className="text-xs font-mono text-zinc-500 uppercase mt-4">Why This Works</div>
-              <p className="text-sm text-zinc-400 leading-relaxed">
-                {pattern.problems[0]?.why}
-              </p>
-            </div>
-          )}
-
-          {/* Problems to Solve Today */}
-          <div className="pt-4">
-            <div className="flex items-center gap-2 mb-3">
-              <TrendingUp size={16} className="text-zinc-400" />
-              <span className="text-xs font-mono text-zinc-400 uppercase">Architecture Set (Derive First)</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {pattern.problems.map((p, i) => (
-                <div key={i} className="block-square p-4 hover:border-zinc-600 transition-colors">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-white">{p.name}</span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                      p.difficulty === "Easy" ? "bg-emerald-950/50 text-emerald-400 border-emerald-900" :
-                      p.difficulty === "Medium" ? "bg-amber-950/50 text-amber-400 border-amber-900" :
-                      "bg-rose-950/50 text-rose-400 border-rose-900"
-                    }`}>{p.difficulty}</span>
-                  </div>
-                  <p className="text-xs text-zinc-500">{p.why}</p>
+              {/* Progress */}
+              <div className="mt-5 w-full max-w-md">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Pattern Mastery</span>
+                  <span className="text-[10px] font-mono text-zinc-400">{cycleStage}</span>
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Right: MSMW Control Panel */}
-        <div className="space-y-4">
-          <div className="block-elevated p-5 sticky top-20">
-            <div className="flex items-center gap-2 mb-4">
-              <Clock size={16} className="text-zinc-400" />
-              <span className="text-xs font-mono text-zinc-400 uppercase">MSMW Control</span>
+                <div className="w-full h-2 bg-neutral-900 rounded-full overflow-hidden border border-neutral-800">
+                  <div
+                    className="h-full bg-white transition-all duration-700 ease-out"
+                    style={{ width: `${Math.min((cycleCount / 100) * 100, 100)}%` }}
+                  />
+                </div>
+              </div>
             </div>
 
-            <div className="text-center py-6">
-              <div className="text-4xl font-mono font-bold tracking-tight">{formatTime(msmwTime)}</div>
-              <div className="text-xs text-zinc-500 mt-1">{msmwActive ? "SIMULATION LIVE" : "STANDBY"}</div>
-            </div>
-
-            <div className="flex flex-col gap-2 mb-4">
-              {!msmwActive ? (
+            {/* Right: Action Panel */}
+            <div className="flex flex-col gap-3 lg:min-w-[260px]">
+              {loading ? (
+                /* Skeleton — same footprint as loaded state */
+                <div className="space-y-3">
+                  <div className="h-12 bg-neutral-900 rounded-lg animate-pulse border border-neutral-800" />
+                  <div className="flex gap-2">
+                    <div className="flex-1 h-9 bg-neutral-900 rounded-md animate-pulse border border-neutral-800" />
+                    <div className="flex-1 h-9 bg-neutral-900 rounded-md animate-pulse border border-neutral-800" />
+                  </div>
+                  <div className="h-9 w-12 bg-neutral-900 rounded-md animate-pulse border border-neutral-800 ml-auto" />
+                </div>
+              ) : !msmwActive ? (
                 canStartMSMW ? (
                   <button
                     onClick={async () => {
@@ -241,111 +177,194 @@ export default function DashboardPage() {
                       await addCCU("Started MSMW Session", 60);
                       setShowHardConfirm(false);
                     }}
-                    className="w-full py-2.5 text-sm font-medium rounded-md transition-colors flex items-center justify-center gap-2 bg-white text-black hover:bg-zinc-200"
-                    title="Start 90-120 min MSMW block"
+                    className="w-full py-3.5 text-sm font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 bg-white text-black hover:bg-zinc-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-white/5 active:translate-y-0 active:shadow-none"
                   >
-                    <Play size={16} /> Start Deep Work (+60 CCU)
+                    <Play size={16} fill="currentColor" /> Start Deep Work
+                    <span className="text-[10px] font-normal opacity-60 ml-1">—60 CCU</span>
                   </button>
                 ) : (
-                  <div className="space-y-2">
-                    <button
-                      disabled
-                      className="w-full py-2.5 text-sm font-medium rounded-md bg-neutral-800 text-zinc-500 cursor-not-allowed flex items-center justify-center gap-2"
-                      title={`Only ${ccuRemaining} CCU remaining. Need 60 to start MSMW.`}
-                    >
-                      <Play size={16} /> Budget Depleted
-                    </button>
+                  <div className="flex flex-col gap-2">
+                    {/* Budget Status */}
+                    <div className="flex items-center gap-3 p-3 rounded-lg border border-neutral-800 bg-neutral-950/50">
+                      <BatteryWarning size={18} className="text-amber-500 flex-shrink-0" />
+                      <div>
+                        <div className="text-xs text-zinc-300 font-medium">Low on cognitive budget</div>
+                        <div className="text-[10px] text-zinc-500">
+                          You have {ccuRemaining} CCU. A session needs 60.
+                        </div>
+                      </div>
+                    </div>
 
+                    {/* Hard Mode — same height whether confirming or not */}
                     {!showHardConfirm ? (
                       <button
                         onClick={() => setShowHardConfirm(true)}
-                        className="w-full py-2 text-xs font-medium rounded-md border border-rose-900 text-rose-400 hover:bg-rose-950/30 hover:border-rose-700 transition-colors flex items-center justify-center gap-2"
+                        className="w-full py-3.5 text-sm font-semibold rounded-lg border transition-all duration-200 flex items-center justify-center gap-2 border-rose-800/60 bg-rose-950/20 text-rose-300 hover:bg-rose-900/30 hover:border-rose-600 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-rose-900/10 active:translate-y-0 active:shadow-none"
                       >
-                        <Skull size={14} /> Hard Mode — Start Anyway
+                        <Skull size={16} /> Hard Mode
                       </button>
                     ) : (
-                      <div className="p-3 bg-rose-950/30 border border-rose-900/60 rounded-md space-y-2">
-                        <div className="text-xs text-rose-300 font-medium">
-                          <Skull size={12} className="inline mr-1" />
-                          You are borrowing from tomorrow.
-                        </div>
-                        <div className="text-[10px] text-rose-400/70 leading-relaxed">
-                          Your cognitive budget is depleted. Starting an MSMW now means sleep debt will accumulate. Your error rate will spike.
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={async () => {
-                              await startMSMW(pattern.id, true);
-                              setTodayCCU((c) => c + 60);
-                              await addCCU("Started MSMW Session (HARD MODE)", 60);
-                              setShowHardConfirm(false);
-                            }}
-                            className="flex-1 py-1.5 bg-rose-500 text-black text-[10px] font-bold rounded hover:bg-rose-400 transition-colors"
-                          >
-                            CONFIRM — START
-                          </button>
-                          <button
-                            onClick={() => setShowHardConfirm(false)}
-                            className="flex-1 py-1.5 border border-neutral-700 text-zinc-400 text-[10px] rounded hover:border-zinc-500 hover:text-white transition-colors"
-                          >
-                            Cancel
-                          </button>
-                        </div>
+                      <div className="flex flex-col gap-2">
+                        <button
+                          onClick={async () => {
+                            await startMSMW(pattern.id, true);
+                            setTodayCCU((c) => c + 60);
+                            await addCCU("Started MSMW Session (HARD MODE)", 60);
+                            setShowHardConfirm(false);
+                          }}
+                          className="w-full py-3.5 text-sm font-semibold rounded-lg bg-rose-500 text-black transition-all duration-200 flex items-center justify-center gap-2 hover:bg-rose-400 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-rose-500/10 active:translate-y-0 active:shadow-none"
+                        >
+                          <Skull size={16} /> Confirm — Start Hard Mode
+                        </button>
+                        <button
+                          onClick={() => setShowHardConfirm(false)}
+                          className="w-full py-2 text-[11px] text-zinc-500 hover:text-white transition-colors"
+                        >
+                          Cancel
+                        </button>
                       </div>
                     )}
                   </div>
                 )
               ) : (
-                <button
-                  onClick={async () => {
-                    await stopMSMW();
-                    setTodayCCU((c) => Math.max(0, c - 60));
-                    setShowHardConfirm(false);
-                  }}
-                  className={`flex-1 py-2.5 text-white text-sm font-medium rounded-md transition-colors flex items-center justify-center gap-2 ${
-                    hardMode ? "bg-rose-900 hover:bg-rose-800" : "bg-neutral-800 hover:bg-neutral-700"
-                  }`}
-                >
-                  <RotateCcw size={16} /> {hardMode ? "Stop Hard Mode" : "Stop / Reset"}
-                </button>
+                <div className="space-y-3">
+                  {/* Live Timer */}
+                  <div className="text-center py-2 relative">
+                    {/* Pulsing live dot */}
+                    <div className="flex items-center justify-center gap-2 mb-2">
+                      <span className="relative flex h-2 w-2">
+                        <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${hardMode ? "bg-rose-400" : "bg-emerald-400"}`}></span>
+                        <span className={`relative inline-flex rounded-full h-2 w-2 ${hardMode ? "bg-rose-500" : "bg-emerald-500"}`}></span>
+                      </span>
+                      <span className={`text-[10px] font-mono uppercase tracking-widest ${hardMode ? "text-rose-400" : "text-emerald-400"}`}>
+                        {hardMode ? "Hard Mode Active" : "Simulation Live"}
+                      </span>
+                    </div>
+                    <div className="text-4xl font-mono font-bold tracking-tighter tabular-nums">{formatTime(msmwTime)}</div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      await stopMSMW();
+                      setTodayCCU((c) => Math.max(0, c - 60));
+                      setShowHardConfirm(false);
+                    }}
+                    className={`w-full py-3 text-sm font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 text-white hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0 active:shadow-none ${
+                      hardMode
+                        ? "bg-rose-900 hover:bg-rose-800 hover:shadow-rose-900/10"
+                        : "bg-neutral-800 hover:bg-neutral-700 hover:shadow-black/20"
+                    }`}
+                  >
+                    <RotateCcw size={16} /> Stop Session
+                  </button>
+                </div>
               )}
-            </div>
 
-            {/* Hard Mode Indicator */}
-            {msmwActive && hardMode && (
-              <div className="mb-4 p-3 bg-rose-950/40 border border-rose-900 rounded-md text-xs text-rose-300">
-                <div className="font-semibold flex items-center gap-1.5">
-                  <Skull size={12} /> HARD MODE ACTIVE
-                </div>
-                <div className="text-rose-400/70 mt-0.5">
-                  You are in sleep-debt territory. Your error rate will spike. Track it.
-                </div>
+              {/* Quick Links */}
+              <div className="flex gap-2 pt-1">
+                <Link
+                  href="/practice"
+                  className="flex-1 py-2.5 text-[11px] text-center text-black bg-white font-semibold rounded-md hover:bg-zinc-200 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-1"
+                >
+                  Code <ChevronRight size={12} />
+                </Link>
+                <Link
+                  href="/daily"
+                  className="flex-1 py-2.5 text-[11px] text-center text-zinc-400 border border-neutral-800 rounded-md hover:border-zinc-600 hover:text-white transition-all duration-200 flex items-center justify-center"
+                >
+                  Daily
+                </Link>
+                <button
+                  onClick={() => setEmergencyMode(true)}
+                  className="px-3 py-2.5 text-amber-400 border border-amber-900 rounded-md hover:bg-amber-950/30 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"
+                  title="Word-Blur Emergency"
+                >
+                  <AlertTriangle size={14} />
+                </button>
               </div>
-            )}
-
-            {/* Pause & Render Reminder */}
-            {msmwActive && msmwTime > 0 && msmwTime % 1200 === 0 && (
-              <div className="mb-4 p-3 bg-amber-950/50 border border-amber-900 rounded-md text-xs text-amber-300">
-                <div className="font-semibold mb-1">Pause & Render (20 min elapsed)</div>
-                Close eyes. Render the current problem structure. Do not proceed until the image is clear.
-              </div>
-            )}
-
-            {/* Quick Actions */}
-            <div className="space-y-2 pt-4 border-t border-neutral-800">
-              <Link href="/practice" className="block w-full py-2.5 text-xs text-center text-black bg-white font-medium rounded-md hover:bg-zinc-200 transition-colors">
-                Start Coding →
-              </Link>
-              <Link href="/daily" className="block w-full py-2 text-xs text-center text-zinc-400 hover:text-white border border-neutral-800 rounded-md hover:border-zinc-600 transition-colors">
-                Daily Checklist
-              </Link>
             </div>
           </div>
+        </div>
+      </div>
 
-          {/* Pattern Switcher (minimized to reduce context switching) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left: Pattern Details */}
+        <div className="lg:col-span-2 space-y-4">
+          <CodeBlock code={pattern.template} filename={`${pattern.id}.template.js`} />
+
+          {/* Compact Info Toggle */}
+          <button
+            onClick={() => setShowInfo(!showInfo)}
+            className="w-full py-2 text-xs text-zinc-500 border border-neutral-800 rounded-md hover:border-zinc-600 hover:text-white transition-colors"
+          >
+            {showInfo ? "Hide" : "Show"} Trigger & Invariant
+          </button>
+
+          {showInfo && (
+            <div className="block-square p-4 space-y-3">
+              <div>
+                <div className="text-[10px] font-mono text-zinc-500 uppercase mb-1">Trigger</div>
+                <p className="text-sm text-zinc-300">{pattern.trigger}</p>
+              </div>
+              <div>
+                <div className="text-[10px] font-mono text-zinc-500 uppercase mb-1">Invariant</div>
+                <p className="text-sm text-zinc-300">{pattern.invariant}</p>
+              </div>
+              <div>
+                <div className="text-[10px] font-mono text-zinc-500 uppercase mb-1">Complexity</div>
+                <p className="text-sm text-zinc-300 font-mono">{pattern.complexity}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Problems — compact list */}
+          <div className="pt-2">
+            <div className="flex items-center gap-2 mb-3">
+              <TrendingUp size={14} className="text-zinc-500" />
+              <span className="text-[10px] font-mono text-zinc-500 uppercase">Architecture Set</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {pattern.problems.map((p, i) => (
+                <div
+                  key={i}
+                  className="block p-3 bg-neutral-950 border border-neutral-800 rounded-md"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-white">{p.name}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                      p.difficulty === "Easy" ? "bg-emerald-950/50 text-emerald-400 border-emerald-900" :
+                      p.difficulty === "Medium" ? "bg-amber-950/50 text-amber-400 border-amber-900" :
+                      "bg-rose-950/50 text-rose-400 border-rose-900"
+                    }`}>{p.difficulty}</span>
+                  </div>
+                  <p className="text-[10px] text-zinc-500 mt-1 truncate">{p.why}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Sidebar */}
+        <div className="space-y-4">
+          {/* Timer Card (only when active) */}
+          {msmwActive && (
+            <div className="block-elevated p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Clock size={14} className="text-zinc-400" />
+                <span className="text-[10px] font-mono text-zinc-400 uppercase">Session Timer</span>
+              </div>
+              <div className="text-2xl font-mono font-bold tracking-tight">{formatTime(msmwTime)}</div>
+              {msmwTime > 0 && msmwTime % 1200 === 0 && (
+                <div className="mt-3 p-2.5 bg-amber-950/50 border border-amber-900 rounded-md text-[11px] text-amber-300">
+                  <span className="font-semibold">Pause & Render</span> — 20 min elapsed. Close eyes. Render the structure.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Pattern Navigator */}
           <div className="block-square p-4">
-            <div className="text-xs font-mono text-zinc-500 uppercase mb-3">Pattern Navigator</div>
-            <div className="flex flex-wrap gap-2">
+            <div className="text-[10px] font-mono text-zinc-500 uppercase mb-3">Pattern Navigator</div>
+            <div className="flex flex-wrap gap-1.5">
               {patterns.map((p, i) => (
                 <button
                   key={p.id}
@@ -359,6 +378,23 @@ export default function DashboardPage() {
                   {p.id}
                 </button>
               ))}
+            </div>
+          </div>
+
+          {/* Stats */}
+          <div className="block-square p-4 space-y-3">
+            <div className="text-[10px] font-mono text-zinc-500 uppercase">Today's Stats</div>
+            <div className="flex justify-between text-sm">
+              <span className="text-zinc-400">CCU Spent</span>
+              <span className="font-mono text-white">{todayCCU} / 100</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-zinc-400">Pattern Stage</span>
+              <span className="font-mono text-white">{cycleStage}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-zinc-400">Cycles</span>
+              <span className="font-mono text-white">{cycleCount}</span>
             </div>
           </div>
         </div>

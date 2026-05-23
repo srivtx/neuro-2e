@@ -8,6 +8,8 @@ import { Play, RotateCcw, Check, Circle, AlertTriangle, ChevronDown, ChevronUp, 
 import OnionReader from "./OnionReader";
 import PauseAndRender from "./PauseAndRender";
 import CCUWarning from "./CCUWarning";
+import VictoryOverlay from "./VictoryOverlay";
+import { useRouter } from "next/navigation";
 
 function arraysEqual(a: any, b: any): boolean {
   if (a === b) return true;
@@ -78,6 +80,10 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
 
   // Prevent duplicate DB writes when all tests pass
   const savedToDbRef = useRef(false);
+
+  // Victory overlay
+  const [showVictory, setShowVictory] = useState(false);
+  const router = useRouter();
 
   // Refs for timers so auto-save interval doesn't reset every second
   const derivationTimerRef = useRef(derivationTimer);
@@ -286,6 +292,7 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
     if (allPassed && problem && !savedToDbRef.current) {
       savedToDbRef.current = true;
       setCodeTimerActive(false);
+      setShowVictory(true);
       markProblemSolved(problem.id, problem.patternId, problem.name, problem.number, problem.difficulty);
       // Also update the derivation log with final time_to_code
       saveDerivationLogDraft(problem.id, problem.patternId, {
@@ -316,8 +323,8 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
   };
 
   const submitDerivation = async () => {
-    if (!structuralNecessity.trim() || !invariantIdentification.trim()) {
-      alert("Fill in Structural Necessity and Invariant Identification before submitting.");
+    if (!structuralNecessity.trim()) {
+      alert("Fill in the core derivation before submitting.");
       return;
     }
 
@@ -488,12 +495,23 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
 
           {/* Derivation Log Form */}
           <div className={`block-elevated p-5 ${activeTab === "description" ? "hidden sm:block" : ""}`}>
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Brain size={16} className="text-zinc-400" />
                 <span className="text-xs font-mono text-zinc-400 uppercase">Derivation Log</span>
               </div>
               <div className="flex items-center gap-2">
+                <span className="text-xs font-mono text-zinc-500">{formatTime(derivationTimer)}</span>
+                {!derivationSaved && (
+                  <button
+                    onClick={() => setDerivationActive(!derivationActive)}
+                    className={`px-2 py-0.5 text-[10px] rounded border transition-colors ${
+                      derivationActive ? "bg-amber-950/50 text-amber-400 border-amber-900" : "border-neutral-700 text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    {derivationActive ? "Pause" : "Start"}
+                  </button>
+                )}
                 {!derivationSaved && draftSavedAt && (
                   <span className="text-[10px] px-2 py-0.5 rounded bg-neutral-800 text-zinc-400 border border-neutral-700">Draft saved</span>
                 )}
@@ -503,98 +521,62 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
               </div>
             </div>
 
-            {/* Timer */}
-            <div className="flex items-center justify-between p-3 bg-neutral-900/50 border border-neutral-800 rounded-md mb-4">
-              <div className="flex items-center gap-2">
-                <Timer size={14} className="text-zinc-500" />
-                <span className="text-xs text-zinc-400">Derivation Time</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-mono font-bold">{formatTime(derivationTimer)}</span>
-                {!derivationSaved && (
-                  <button
-                    onClick={() => setDerivationActive(!derivationActive)}
-                    className={`px-3 py-1 text-[10px] rounded border transition-colors ${
-                      derivationActive ? "bg-amber-950/50 text-amber-400 border-amber-900" : "border-neutral-700 text-zinc-400 hover:text-white"
-                    }`}
-                  >
-                    {derivationActive ? "Pause" : "Start Timer"}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {/* Structural Necessity */}
+            <div className="space-y-3">
+              {/* Core Derivation — required */}
               <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-1.5">
-                  1. Structural Necessity <span className="text-rose-500">*</span>
+                <label className="block text-xs font-medium text-zinc-400 mb-1">
+                  Why this pattern? <span className="text-rose-500">*</span>
                 </label>
                 <textarea
                   value={structuralNecessity}
                   onChange={(e) => setStructuralNecessity(e.target.value)}
-                  placeholder="Why MUST this pattern be used? Derive from first principles. What property of the problem makes this approach necessary rather than merely sufficient?"
+                  placeholder="Derive from first principles. What property of the problem makes this approach necessary?"
                   className="w-full p-3 bg-neutral-900/50 border border-neutral-800 rounded-md text-sm text-zinc-300 placeholder:text-zinc-600 resize-none focus:border-zinc-600 focus:outline-none"
                   rows={3}
                   disabled={derivationSaved}
                 />
               </div>
 
-              {/* Invariant Identification */}
+              {/* Invariant — optional */}
               <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-1.5">
-                  2. Invariant Identification <span className="text-rose-500">*</span>
+                <label className="block text-xs font-medium text-zinc-400 mb-1">
+                  What must stay true? (optional)
                 </label>
                 <textarea
                   value={invariantIdentification}
                   onChange={(e) => setInvariantIdentification(e.target.value)}
-                  placeholder="What property remains TRUE at every step of the algorithm? This is the load-bearing wall. If the invariant breaks, the algorithm collapses."
+                  placeholder="The load-bearing wall. If this breaks, the algorithm collapses."
                   className="w-full p-3 bg-neutral-900/50 border border-neutral-800 rounded-md text-sm text-zinc-300 placeholder:text-zinc-600 resize-none focus:border-zinc-600 focus:outline-none"
-                  rows={3}
+                  rows={2}
                   disabled={derivationSaved}
                 />
               </div>
 
-              {/* Failure Mode Analysis */}
+              {/* Edge cases & rejected approaches — optional, combined */}
               <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-1.5">
-                  3. Failure Mode Analysis
+                <label className="block text-xs font-medium text-zinc-400 mb-1">
+                  Edge cases & rejected approaches (optional)
                 </label>
                 <textarea
                   value={failureModes}
                   onChange={(e) => setFailureModes(e.target.value)}
-                  placeholder="When would this pattern FAIL to solve the problem? What constraints would break it?"
+                  placeholder="When would this fail? What else did you consider and reject?"
                   className="w-full p-3 bg-neutral-900/50 border border-neutral-800 rounded-md text-sm text-zinc-300 placeholder:text-zinc-600 resize-none focus:border-zinc-600 focus:outline-none"
                   rows={2}
                   disabled={derivationSaved}
                 />
               </div>
 
-              {/* Alternative Pathways */}
-              <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-1.5">
-                  4. Alternative Pathways Rejected
-                </label>
-                <textarea
-                  value={alternativesRejected}
-                  onChange={(e) => setAlternativesRejected(e.target.value)}
-                  placeholder="What other approaches did you consider and why did you reject them?"
-                  className="w-full p-3 bg-neutral-900/50 border border-neutral-800 rounded-md text-sm text-zinc-300 placeholder:text-zinc-600 resize-none focus:border-zinc-600 focus:outline-none"
-                  rows={2}
-                  disabled={derivationSaved}
-                />
-              </div>
-
-              {/* Ratings */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-2">Mental Image Clarity (1-5)</label>
-                  <div className="flex gap-2">
+              {/* Compact Ratings */}
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-[10px] font-medium text-zinc-500 mb-1 uppercase">Clarity</label>
+                  <div className="flex gap-1">
                     {[1, 2, 3, 4, 5].map((n) => (
                       <button
                         key={n}
                         onClick={() => !derivationSaved && setMentalClarity(n)}
-                        className={`w-8 h-8 rounded-md border text-xs font-medium transition-colors ${
+                        className={`flex-1 h-7 rounded border text-[10px] font-medium transition-colors ${
                           mentalClarity === n
                             ? "bg-white text-black border-white"
                             : "border-neutral-800 text-zinc-500 hover:border-zinc-600"
@@ -606,14 +588,14 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
                     ))}
                   </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-2">Derivation Confidence (1-5)</label>
-                  <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="block text-[10px] font-medium text-zinc-500 mb-1 uppercase">Confidence</label>
+                  <div className="flex gap-1">
                     {[1, 2, 3, 4, 5].map((n) => (
                       <button
                         key={n}
                         onClick={() => !derivationSaved && setDerivationConfidence(n)}
-                        className={`w-8 h-8 rounded-md border text-xs font-medium transition-colors ${
+                        className={`flex-1 h-7 rounded border text-[10px] font-medium transition-colors ${
                           derivationConfidence === n
                             ? "bg-white text-black border-white"
                             : "border-neutral-800 text-zinc-500 hover:border-zinc-600"
@@ -879,6 +861,28 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
           )}
         </div>
       </div>
+
+      {/* Victory Overlay */}
+      <VictoryOverlay
+        show={showVictory}
+        problemName={problem.name}
+        timeToDerive={derivationTimer}
+        timeToCode={codeTimer}
+        mentalClarity={mentalClarity}
+        derivationConfidence={derivationConfidence}
+        onNext={() => {
+          setShowVictory(false);
+          nextProblem();
+        }}
+        onReview={() => {
+          setShowVictory(false);
+          setShowSolution(true);
+        }}
+        onDashboard={() => {
+          setShowVictory(false);
+          router.push("/");
+        }}
+      />
     </div>
     </>
   );

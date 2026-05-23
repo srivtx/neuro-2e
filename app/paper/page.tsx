@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useEffect, useCallback } from "react";
-import { PenLine, Eraser, Trash2, Minus, Plus, Download, Undo, Square, Type, ArrowRight, Check, X, MousePointer2 } from "lucide-react";
+import { PenLine, Eraser, Trash2, Minus, Plus, Download, Undo, Square, Type, ArrowRight, Check, X, MousePointer2, Grid3x3, List, GitBranch } from "lucide-react";
 
 type Tool = "select" | "pen" | "rectangle" | "arrow" | "text" | "eraser";
 
@@ -90,6 +90,9 @@ export default function PaperPage() {
   const moveOffsetRef = useRef<Point>({ x: 0, y: 0 });
   const lastMousePosRef = useRef<Point>({ x: 0, y: 0 });
 
+  // Dot grid
+  const [showDotGrid, setShowDotGrid] = useState(false);
+
   // Drawing state
   const isDrawingRef = useRef(false);
   const startPosRef = useRef<Point>({ x: 0, y: 0 });
@@ -99,6 +102,36 @@ export default function PaperPage() {
 
   // Text editing
   const [textEdit, setTextEdit] = useState<{ x: number; y: number; value: string } | null>(null);
+
+  // Persist to localStorage — load on mount, save after every change
+  const loadedRef = useRef(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("neuro-os-paper");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.elements) setElements(parsed.elements);
+        if (parsed.history) setHistory(parsed.history);
+        if (parsed.showDotGrid !== undefined) setShowDotGrid(parsed.showDotGrid);
+      }
+    } catch {
+      // ignore corrupt storage
+    }
+    loadedRef.current = true;
+    return () => { loadedRef.current = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    // Safety: don't save empty state over existing drawings
+    if (elements.length === 0 && history.length === 0) return;
+    try {
+      localStorage.setItem("neuro-os-paper", JSON.stringify({ elements, history, showDotGrid }));
+    } catch {
+      // ignore quota exceeded
+    }
+  }, [elements, history, showDotGrid]);
 
   const getPoint = useCallback((e: React.MouseEvent | React.TouchEvent): Point => {
     const canvas = canvasRef.current;
@@ -117,6 +150,19 @@ export default function PaperPage() {
     if (!ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Dot grid background
+    if (showDotGrid) {
+      ctx.fillStyle = "#262626";
+      const spacing = 20;
+      for (let x = spacing; x < canvas.width; x += spacing) {
+        for (let y = spacing; y < canvas.height; y += spacing) {
+          ctx.beginPath();
+          ctx.arc(x, y, 1, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
 
     elements.forEach((el) => {
       ctx.strokeStyle = el.color;
@@ -221,7 +267,7 @@ export default function PaperPage() {
       }
       ctx.setLineDash([]);
     }
-  }, [elements, currentPoints, tool, color, lineWidth, isShapeDragging, selectedId]);
+  }, [elements, currentPoints, tool, color, lineWidth, isShapeDragging, selectedId, showDotGrid]);
 
   useEffect(() => {
     drawAll();
@@ -232,15 +278,36 @@ export default function PaperPage() {
     const container = containerRef.current;
     if (!canvas || !container) return;
     const rect = container.getBoundingClientRect();
-    canvas.width = rect.width;
-    canvas.height = rect.height;
-    drawAll();
+    const w = Math.max(1, Math.round(rect.width));
+    const h = Math.max(1, Math.round(rect.height));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+      drawAll();
+    }
   }, [drawAll]);
 
   useEffect(() => {
-    resize();
+    const container = containerRef.current;
+    if (!container) return;
+
+    // ResizeObserver is more reliable than window resize for container sizing
+    const observer = new ResizeObserver(() => {
+      resize();
+    });
+    observer.observe(container);
+
+    // Also handle window resize
     window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
+
+    // Initial resize after a tick to ensure container has layout
+    const id = requestAnimationFrame(resize);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(id);
+    };
   }, [resize]);
 
   function drawTextOnCanvas(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, textColor: string, lw: number) {
@@ -522,6 +589,93 @@ export default function PaperPage() {
     tool === "select" ? "default" :
     "crosshair";
 
+  // Template insertion helpers
+  const addArrayTemplate = () => {
+    const startX = 60;
+    const startY = 60;
+    const cellW = 50;
+    const cellH = 40;
+    const gap = 4;
+    const newEls: Element[] = [];
+    for (let i = 0; i < 6; i++) {
+      newEls.push({
+        id: genId(),
+        type: "rectangle",
+        x: startX + i * (cellW + gap),
+        y: startY,
+        width: cellW,
+        height: cellH,
+        color: color,
+        lineWidth: Math.max(1, lineWidth),
+      });
+    }
+    setHistory((prev) => [...prev, elements]);
+    setElements((prev) => [...prev, ...newEls]);
+  };
+
+  const addLinkedListTemplate = () => {
+    const startX = 60;
+    const startY = 60;
+    const nodeW = 44;
+    const nodeH = 28;
+    const gap = 36;
+    const newEls: Element[] = [];
+    for (let i = 0; i < 4; i++) {
+      newEls.push({
+        id: genId(),
+        type: "rectangle",
+        x: startX + i * (nodeW + gap),
+        y: startY,
+        width: nodeW,
+        height: nodeH,
+        color: color,
+        lineWidth: Math.max(1, lineWidth),
+      });
+      if (i < 3) {
+        newEls.push({
+          id: genId(),
+          type: "arrow",
+          start: { x: startX + i * (nodeW + gap) + nodeW, y: startY + nodeH / 2 },
+          end: { x: startX + (i + 1) * (nodeW + gap), y: startY + nodeH / 2 },
+          color: color,
+          lineWidth: Math.max(1, lineWidth),
+        });
+      }
+    }
+    setHistory((prev) => [...prev, elements]);
+    setElements((prev) => [...prev, ...newEls]);
+  };
+
+  const addTreeTemplate = () => {
+    const cx = 200;
+    const cy = 50;
+    const r = 24;
+    const dy = 70;
+    const dx = 80;
+    const newEls: Element[] = [];
+    // Root
+    newEls.push({ id: genId(), type: "rectangle", x: cx - r, y: cy, width: r * 2, height: r * 1.2, color, lineWidth: Math.max(1, lineWidth) });
+    // Left child
+    newEls.push({ id: genId(), type: "rectangle", x: cx - dx - r, y: cy + dy, width: r * 2, height: r * 1.2, color, lineWidth: Math.max(1, lineWidth) });
+    // Right child
+    newEls.push({ id: genId(), type: "rectangle", x: cx + dx - r, y: cy + dy, width: r * 2, height: r * 1.2, color, lineWidth: Math.max(1, lineWidth) });
+    // Arrows
+    newEls.push({ id: genId(), type: "arrow", start: { x: cx, y: cy + r * 1.2 }, end: { x: cx - dx, y: cy + dy }, color, lineWidth: Math.max(1, lineWidth) });
+    newEls.push({ id: genId(), type: "arrow", start: { x: cx, y: cy + r * 1.2 }, end: { x: cx + dx, y: cy + dy }, color, lineWidth: Math.max(1, lineWidth) });
+    setHistory((prev) => [...prev, elements]);
+    setElements((prev) => [...prev, ...newEls]);
+  };
+
+  const templateButton = (icon: React.ReactNode, label: string, onClick: () => void) => (
+    <button
+      onClick={() => { if (textEdit) commitText(); onClick(); }}
+      className="p-2 text-zinc-500 hover:text-white hover:bg-neutral-900 rounded-md transition-colors"
+      title={label}
+    >
+      {icon}
+    </button>
+  );
+
   return (
     <div className="max-w-6xl mx-auto h-[calc(100vh-7rem)] flex flex-col">
       <div className="flex items-center justify-between mb-4">
@@ -563,6 +717,25 @@ export default function PaperPage() {
             />
           ))}
         </div>
+
+        <div className="w-px h-5 bg-neutral-800 mx-1" />
+
+        <div className="flex items-center gap-1">
+          {templateButton(<Grid3x3 size={16} />, "Array Template", addArrayTemplate)}
+          {templateButton(<List size={16} />, "Linked List Template", addLinkedListTemplate)}
+          {templateButton(<GitBranch size={16} />, "Binary Tree Template", addTreeTemplate)}
+        </div>
+
+        <div className="w-px h-5 bg-neutral-800 mx-1" />
+
+        <button
+          onClick={() => setShowDotGrid((v) => !v)}
+          className={`px-2 py-1 text-[10px] font-medium rounded border transition-colors ${
+            showDotGrid ? "bg-white text-black border-white" : "border-neutral-800 text-zinc-500 hover:text-white"
+          }`}
+        >
+          Dot Grid
+        </button>
 
         <div className="flex items-center gap-1.5">
           <button onClick={() => setLineWidth(Math.max(1, lineWidth - 1))} className="p-1 text-zinc-500 hover:text-white transition-colors">

@@ -45,6 +45,7 @@ export default function DailyPage() {
   const [ccuSpent, setCcuSpent] = useState(0);
   const [ccuLog, setCcuLog] = useState<{ activity: string; cost: number }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activePhase, setActivePhase] = useState<"pre" | "msmw" | "post" | "metabolic">("pre");
 
   // Load from DB on mount
   useEffect(() => {
@@ -145,54 +146,103 @@ export default function DailyPage() {
         )}
       </div>
 
-      {/* Checklist */}
+      {/* Checklist — Progressive Disclosure */}
       <div className="block-elevated p-5">
         <div className="flex items-center justify-between mb-4">
           <div className="text-xs font-mono text-zinc-400 uppercase">Protocol Checklist</div>
           <div className="text-xs font-mono text-zinc-500">{completedCount} / {totalCount}</div>
         </div>
 
-        <div className="space-y-6">
+        {/* Phase Tabs */}
+        <div className="flex gap-1 mb-4">
           {categories.map((cat) => {
             const items = checklistItems.filter((i) => i.category === cat);
             const done = items.filter((i) => checked.has(i.id)).length;
             const { label, icon } = categoryLabels[cat];
+            const isActive = activePhase === cat;
+            const isComplete = done === items.length;
 
             return (
-              <div key={cat}>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-zinc-500">{icon}</span>
-                  <span className="text-xs font-medium text-zinc-400 uppercase">{label}</span>
-                  <span className="text-xs text-zinc-600">({done}/{items.length})</span>
-                </div>
-                <div className="space-y-2">
-                  {items.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => toggle(item.id)}
-                      className={`w-full flex items-start gap-3 p-3 rounded-md border text-left transition-all ${
-                        checked.has(item.id)
-                          ? "bg-emerald-950/20 border-emerald-900/40"
-                          : "bg-neutral-900/20 border-neutral-800 hover:border-zinc-600"
-                      }`}
-                    >
-                      <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${
-                        checked.has(item.id) ? "bg-emerald-500 border-emerald-500" : "border-zinc-600"
-                      }`}>
-                        {checked.has(item.id) && <Check size={12} className="text-black" />}
-                      </div>
-                      <span className={`text-sm ${checked.has(item.id) ? "text-emerald-300" : "text-zinc-300"}`}>
-                        {item.label}
-                      </span>
-                      {item.ccu && (
-                        <span className="ml-auto text-[10px] text-zinc-600 font-mono">+{item.ccu}</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <button
+                key={cat}
+                onClick={() => setActivePhase(cat)}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[11px] font-medium rounded-md border transition-all ${
+                  isActive
+                    ? "bg-white text-black border-white"
+                    : isComplete
+                    ? "bg-emerald-950/20 border-emerald-900/40 text-emerald-400"
+                    : "border-neutral-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600"
+                }`}
+              >
+                {icon}
+                <span className="hidden sm:inline">{label}</span>
+                <span className="sm:hidden">{label.split("-")[0]}</span>
+                <span className={`text-[10px] ${isActive ? "text-zinc-500" : "text-zinc-600"}`}>
+                  ({done}/{items.length})
+                </span>
+              </button>
             );
           })}
+        </div>
+
+        {/* Active Phase Items */}
+        <div className="space-y-2">
+          {(() => {
+            const items = checklistItems.filter((i) => i.category === activePhase);
+            const { label } = categoryLabels[activePhase];
+            return (
+              <>
+                <div className="text-[10px] font-mono text-zinc-500 uppercase mb-1">{label} Checklist</div>
+                {items.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => toggle(item.id)}
+                    className={`w-full flex items-start gap-3 p-3 rounded-md border text-left transition-all ${
+                      checked.has(item.id)
+                        ? "bg-emerald-950/20 border-emerald-900/40"
+                        : "bg-neutral-900/20 border-neutral-800 hover:border-zinc-600"
+                    }`}
+                  >
+                    <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${
+                      checked.has(item.id) ? "bg-emerald-500 border-emerald-500" : "border-zinc-600"
+                    }`}>
+                      {checked.has(item.id) && <Check size={12} className="text-black" />}
+                    </div>
+                    <span className={`text-sm ${checked.has(item.id) ? "text-emerald-300" : "text-zinc-300"}`}>
+                      {item.label}
+                    </span>
+                    {item.ccu && (
+                      <span className="ml-auto text-[10px] text-zinc-600 font-mono">+{item.ccu}</span>
+                    )}
+                  </button>
+                ))}
+              </>
+            );
+          })()}
+        </div>
+
+        {/* Phase Navigation */}
+        <div className="flex justify-between mt-4 pt-4 border-t border-neutral-800">
+          <button
+            onClick={() => {
+              const idx = categories.indexOf(activePhase);
+              if (idx > 0) setActivePhase(categories[idx - 1]);
+            }}
+            disabled={activePhase === "pre"}
+            className="px-3 py-1.5 text-[11px] text-zinc-400 border border-neutral-800 rounded-md hover:border-zinc-600 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            ← Previous Phase
+          </button>
+          <button
+            onClick={() => {
+              const idx = categories.indexOf(activePhase);
+              if (idx < categories.length - 1) setActivePhase(categories[idx + 1]);
+            }}
+            disabled={activePhase === "metabolic"}
+            className="px-3 py-1.5 text-[11px] text-black bg-white rounded-md hover:bg-zinc-200 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            Next Phase →
+          </button>
         </div>
       </div>
 

@@ -4,6 +4,7 @@ import { Nav } from "@/components/Nav";
 import YouTubeMusicPlayer from "@/components/YouTubeMusicPlayer";
 import { SessionProvider } from "@/components/SessionProvider";
 import ActiveSessionTimer from "@/components/ActiveSessionTimer";
+import PageTransition from "@/components/PageTransition";
 
 export const metadata: Metadata = {
   title: "NEURO-OS | Cognitive Execution System",
@@ -24,7 +25,9 @@ export default function RootLayout({
         <SessionProvider>
           <Nav />
           <main className="flex-1 w-full max-w-6xl mx-auto px-6 py-8">
-            {children}
+            <PageTransition>
+              {children}
+            </PageTransition>
           </main>
           <ActiveSessionTimer />
           <YouTubeMusicPlayer />
