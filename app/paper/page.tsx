@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect, useCallback } from "react";
 import { PenLine, Eraser, Trash2, Minus, Plus, Download, Undo, Square, Type, ArrowRight, Check, X, MousePointer2, Grid3x3, List, GitBranch } from "lucide-react";
+import { sounds } from "@/lib/sound";
 
 type Tool = "select" | "pen" | "rectangle" | "arrow" | "text" | "eraser";
 
@@ -102,6 +103,10 @@ export default function PaperPage() {
 
   // Text editing
   const [textEdit, setTextEdit] = useState<{ x: number; y: number; value: string } | null>(null);
+
+  // Feedback states
+  const [undoFlash, setUndoFlash] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
 
   // Persist to localStorage — load on mount, save after every change
   const loadedRef = useRef(false);
@@ -546,6 +551,9 @@ export default function PaperPage() {
     setHistory((prev) => prev.slice(0, -1));
     setElements(previous);
     setSelectedId(null);
+    sounds.undo();
+    setUndoFlash(true);
+    setTimeout(() => setUndoFlash(false), 300);
   };
 
   const download = () => {
@@ -556,6 +564,8 @@ export default function PaperPage() {
     link.download = `neuro-os-paper-${Date.now()}.png`;
     link.href = canvas.toDataURL();
     link.click();
+    setDownloaded(true);
+    setTimeout(() => setDownloaded(false), 1500);
   };
 
   const toolButton = (t: Tool, icon: React.ReactNode, label: string) => (
@@ -750,6 +760,16 @@ export default function PaperPage() {
 
       {/* Canvas Container */}
       <div ref={containerRef} className="flex-1 bg-neutral-950 border border-neutral-800 rounded-lg overflow-hidden relative">
+        {/* Undo flash overlay */}
+        {undoFlash && (
+          <div className="absolute inset-0 bg-blue-500/5 pointer-events-none z-20 transition-opacity duration-300" />
+        )}
+        {/* Download feedback */}
+        {downloaded && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-neutral-900/90 border border-neutral-700 rounded-md text-[11px] text-zinc-300 z-20 flex items-center gap-1.5 animate-pulse">
+            <Check size={12} className="text-emerald-400" /> Saved to downloads
+          </div>
+        )}
         <canvas
           ref={canvasRef}
           onMouseDown={handleMouseDown}

@@ -5,6 +5,7 @@ import YouTubeMusicPlayer from "@/components/YouTubeMusicPlayer";
 import { SessionProvider } from "@/components/SessionProvider";
 import ActiveSessionTimer from "@/components/ActiveSessionTimer";
 import PageTransition from "@/components/PageTransition";
+import SoundProvider from "@/components/SoundProvider";
 
 export const metadata: Metadata = {
   title: "NEURO-OS | Cognitive Execution System",
@@ -23,14 +24,16 @@ export default function RootLayout({
     <html lang="en">
       <body className="flex flex-col min-h-screen">
         <SessionProvider>
-          <Nav />
-          <main className="flex-1 w-full max-w-6xl mx-auto px-6 py-8">
-            <PageTransition>
-              {children}
-            </PageTransition>
-          </main>
-          <ActiveSessionTimer />
-          <YouTubeMusicPlayer />
+          <SoundProvider>
+            <Nav />
+            <main className="flex-1 w-full max-w-6xl mx-auto px-6 py-8">
+              <PageTransition>
+                {children}
+              </PageTransition>
+            </main>
+            <ActiveSessionTimer />
+            <YouTubeMusicPlayer />
+          </SoundProvider>
         </SessionProvider>
       </body>
     </html>

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { problems, Problem, TestCase } from "@/lib/problems";
 import { patterns } from "@/lib/patterns";
 import { markProblemSolved, saveDerivationLog, saveDerivationLogDraft, getDerivationLog, scheduleReview } from "@/lib/actions";
+import { sounds } from "@/lib/sound";
 import { Play, RotateCcw, Check, Circle, AlertTriangle, ChevronDown, ChevronUp, Copy, Eye, EyeOff, Lock, Unlock, Timer, Brain, FileText } from "lucide-react";
 import OnionReader from "./OnionReader";
 import PauseAndRender from "./PauseAndRender";
@@ -84,6 +85,9 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
   // Victory overlay
   const [showVictory, setShowVictory] = useState(false);
   const router = useRouter();
+
+  // Copy confirmation
+  const [copied, setCopied] = useState(false);
 
   // Refs for timers so auto-save interval doesn't reset every second
   const derivationTimerRef = useRef(derivationTimer);
@@ -247,6 +251,9 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
     setTestResults(results);
     setShowTests(true);
     setActiveTab("tests");
+    if (results.length > 0 && !results.every((r) => r.passed)) {
+      sounds.fail();
+    }
   }, [code, problem]);
 
   // Keyboard shortcuts
@@ -292,6 +299,7 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
     if (allPassed && problem && !savedToDbRef.current) {
       savedToDbRef.current = true;
       setCodeTimerActive(false);
+      sounds.pass();
       setShowVictory(true);
       markProblemSolved(problem.id, problem.patternId, problem.name, problem.number, problem.difficulty);
       // Also update the derivation log with final time_to_code
@@ -357,7 +365,23 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
   };
 
   if (loadingLog) {
-    return <div className="text-xs text-zinc-500 p-4">Loading derivation log...</div>;
+    return (
+      <div className="max-w-5xl mx-auto space-y-4 p-4">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="animate-pulse bg-neutral-800/50 h-4 w-32 rounded-md" />
+        </div>
+        <div className="space-y-4">
+          <div className="animate-pulse bg-neutral-800/50 h-24 w-full rounded-md" />
+          <div className="animate-pulse bg-neutral-800/50 h-24 w-full rounded-md" />
+          <div className="animate-pulse bg-neutral-800/50 h-16 w-full rounded-md" />
+          <div className="flex gap-2">
+            <div className="animate-pulse bg-neutral-800/50 h-8 flex-1 rounded-md" />
+            <div className="animate-pulse bg-neutral-800/50 h-8 flex-1 rounded-md" />
+          </div>
+          <div className="animate-pulse bg-neutral-800/50 h-10 w-full rounded-md" />
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -848,10 +872,17 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
               <div className="flex items-center justify-between px-4 py-2 border-b border-neutral-800 bg-neutral-900/50">
                 <span className="text-xs text-zinc-400 font-mono">canonical.solution.js</span>
                 <button
-                  onClick={() => navigator.clipboard.writeText(problem.solution)}
-                  className="flex items-center gap-1 text-xs text-zinc-500 hover:text-white transition-colors"
+                  onClick={() => {
+                    navigator.clipboard.writeText(problem.solution);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1500);
+                  }}
+                  className={`flex items-center gap-1 text-xs transition-colors ${
+                    copied ? "text-emerald-400" : "text-zinc-500 hover:text-white"
+                  }`}
                 >
-                  <Copy size={12} /> Copy
+                  {copied ? <Check size={12} /> : <Copy size={12} />}
+                  {copied ? "Copied" : "Copy"}
                 </button>
               </div>
               <pre className="p-4 overflow-x-auto">

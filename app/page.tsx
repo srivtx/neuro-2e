@@ -2,13 +2,25 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { motion, AnimatePresence } from "framer-motion";
 import { patterns } from "@/lib/patterns";
 import { CodeBlock } from "@/components/CodeBlock";
-import { Play, RotateCcw, Zap, TrendingUp, Clock, AlertTriangle, Skull, ChevronRight, BatteryWarning } from "lucide-react";
+import { Play, RotateCcw, Zap, TrendingUp, Clock, AlertTriangle, Skull, ChevronRight, BatteryWarning, RefreshCw } from "lucide-react";
 import { getPatternCycles, getTodayCCU, addCCU } from "@/lib/actions";
+import { setPatternColor } from "@/lib/theme";
+import { useAnimatedNumber } from "@/lib/hooks";
+import { sounds } from "@/lib/sound";
 import { useSession } from "@/components/SessionProvider";
 import CCUWarning from "@/components/CCUWarning";
 
+/* ─── Skeleton helpers ─── */
+function Skeleton({ className }: { className?: string }) {
+  return (
+    <div className={`animate-pulse bg-neutral-800/50 rounded-md ${className}`} />
+  );
+}
+
+/* ─── Page ─── */
 export default function DashboardPage() {
   const { active: msmwActive, elapsed: msmwTime, startMSMW, stopMSMW, hardMode } = useSession();
   const [currentPatternIndex, setCurrentPatternIndex] = useState(0);
@@ -17,23 +29,35 @@ export default function DashboardPage() {
   const [emergencyMode, setEmergencyMode] = useState(false);
   const [todayCCU, setTodayCCU] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showHardConfirm, setShowHardConfirm] = useState(false);
 
   const pattern = patterns[currentPatternIndex];
 
-  // Load real cycle count from DB
-  useEffect(() => {
-    async function load() {
+  async function loadData() {
+    setLoading(true);
+    setError(null);
+    try {
       const [cycles, ccu] = await Promise.all([
         getPatternCycles(pattern.id),
         getTodayCCU(),
       ]);
       setCycleCount(cycles);
       setTodayCCU(ccu);
+    } catch (err) {
+      setError("Could not reach your cognitive data. The system may be warming up.");
+    } finally {
       setLoading(false);
     }
-    load();
+  }
+
+  useEffect(() => {
+    setPatternColor(pattern.color);
+    loadData();
   }, [pattern.id]);
+
+  const animatedCycles = useAnimatedNumber(cycleCount);
+  const animatedCCU = useAnimatedNumber(todayCCU);
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -48,36 +72,6 @@ export default function DashboardPage() {
     cycleCount < 50 ? "Associating" :
     cycleCount < 75 ? "Consolidating" :
     cycleCount < 100 ? "Snapping" : "Mastery";
-
-  if (emergencyMode) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 text-center">
-        <AlertTriangle size={48} className="text-amber-500" />
-        <h1 className="text-2xl font-bold">Word-Blur Detected</h1>
-        <p className="text-zinc-400 max-w-md">
-          Your input port is saturated. Do not push through.
-          Execute the recovery protocol.
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-2xl">
-          <button onClick={() => setEmergencyMode(false)} className="block-square p-4 hover:border-white transition-colors text-left">
-            <div className="text-xs text-zinc-500 mb-1">Step 1</div>
-            <div className="font-medium">Hard Stop</div>
-            <div className="text-xs text-zinc-400 mt-1">Close the problem immediately</div>
-          </button>
-          <div className="block-square p-4">
-            <div className="text-xs text-zinc-500 mb-1">Step 2</div>
-            <div className="font-medium">State Dump</div>
-            <div className="text-xs text-zinc-400 mt-1">Write everything you currently hold</div>
-          </div>
-          <div className="block-square p-4">
-            <div className="text-xs text-zinc-500 mb-1">Step 3</div>
-            <div className="font-medium">Metabolic Reset</div>
-            <div className="text-xs text-zinc-400 mt-1">5 min walk, no screens</div>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   const canStartMSMW = todayCCU + 60 <= 100;
   const ccuRemaining = 100 - todayCCU;
@@ -101,28 +95,52 @@ export default function DashboardPage() {
   };
   const pc = colorMap[pattern.color] || colorMap.zinc;
 
+  /* ─── Emergency Mode ─── */
+  if (emergencyMode) {
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.2 }}
+        className="flex flex-col items-center justify-center min-h-[60vh] gap-6 text-center"
+      >
+        <AlertTriangle size={48} className="text-amber-500" />
+        <h1 className="text-2xl font-bold">Word-Blur Detected</h1>
+        <p className="text-zinc-400 max-w-md">
+          Your input port is saturated. Do not push through.
+          Execute the recovery protocol.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-2xl">
+          <button onClick={() => setEmergencyMode(false)} className="block-square p-4 hover:border-white transition-colors text-left">
+            <div className="text-xs text-zinc-500 mb-1">Step 1</div>
+            <div className="font-medium">Hard Stop</div>
+            <div className="text-xs text-zinc-400 mt-1">Close the problem immediately</div>
+          </button>
+          <div className="block-square p-4">
+            <div className="text-xs text-zinc-500 mb-1">Step 2</div>
+            <div className="font-medium">State Dump</div>
+            <div className="text-xs text-zinc-400 mt-1">Write everything you currently hold</div>
+          </div>
+          <div className="block-square p-4">
+            <div className="text-xs text-zinc-500 mb-1">Step 3</div>
+            <div className="font-medium">Metabolic Reset</div>
+            <div className="text-xs text-zinc-400 mt-1">5 min walk, no screens</div>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <CCUWarning />
 
-      <style>{`
-        @keyframes ambient-pulse {
-          0%, 100% { opacity: 0.15; }
-          50% { opacity: 0.25; }
-        }
-        @keyframes live-breathe {
-          0%, 100% { transform: scale(1); opacity: 1; }
-          50% { transform: scale(1.5); opacity: 0.5; }
-        }
-      `}</style>
-
-      {/* === MISSION CONTROL HERO === */}
+      {/* === HERO: Mission Control === */}
       <div className="relative">
-        {/* Ambient glow behind card */}
         <div
-          className="absolute -inset-1 rounded-xl blur-2xl transition-colors duration-700 pointer-events-none"
+          className="absolute -inset-1 rounded-xl blur-2xl pointer-events-none transition-all duration-700"
           style={{
-            background: `radial-gradient(circle at 50% 50%, var(--glow-color, rgba(255,255,255,0.03)), transparent 70%)`,
+            background: `radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--pattern-accent) 8%, transparent), transparent 70%)`,
             opacity: 0.6,
           }}
         />
@@ -130,43 +148,78 @@ export default function DashboardPage() {
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
             {/* Left: Pattern Identity */}
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-3">
-                <span className={`text-[10px] px-2 py-0.5 rounded border ${pc.bg} ${pc.text} ${pc.border} font-medium uppercase tracking-wider`}>
-                  {pattern.tag}
-                </span>
-                <span className="text-[10px] font-mono text-zinc-600">
-                  {loading ? "..." : `${cycleCount} / 100 cycles · ${cycleStage}`}
-                </span>
-              </div>
-              <h1 className="text-3xl lg:text-5xl font-bold tracking-tight mb-3 leading-none">{pattern.name}</h1>
-              <p className="text-sm text-zinc-400 max-w-xl leading-relaxed">{pattern.trigger}</p>
-
-              {/* Progress */}
-              <div className="mt-5 w-full max-w-md">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Pattern Mastery</span>
-                  <span className="text-[10px] font-mono text-zinc-400">{cycleStage}</span>
+              {loading ? (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Skeleton className="h-5 w-20" />
+                    <Skeleton className="h-4 w-32" />
+                  </div>
+                  <Skeleton className="h-10 lg:h-14 w-3/4" />
+                  <Skeleton className="h-4 w-full max-w-md" />
+                  <div className="mt-4 w-full max-w-md space-y-1.5">
+                    <div className="flex justify-between">
+                      <Skeleton className="h-3 w-24" />
+                      <Skeleton className="h-3 w-16" />
+                    </div>
+                    <Skeleton className="h-2 w-full rounded-full" />
+                  </div>
                 </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className={`text-[10px] px-2 py-0.5 rounded border ${pc.bg} ${pc.text} ${pc.border} font-medium uppercase tracking-wider`}>
+                      {pattern.tag}
+                    </span>
+                <span className="text-[10px] font-mono text-zinc-600">
+                  {loading ? "..." : `${animatedCycles} / 100 cycles · ${cycleStage}`}
+                </span>
+                  </div>
+                  <h1 className="text-3xl lg:text-5xl font-bold tracking-tight mb-3 leading-none">{pattern.name}</h1>
+                  <p className="text-sm text-zinc-400 max-w-xl leading-relaxed">{pattern.trigger}</p>
+
+                  <div className="mt-5 w-full max-w-md">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Pattern Mastery</span>
+                      <span className="text-[10px] font-mono text-zinc-400">{cycleStage}</span>
+                    </div>
                 <div className="w-full h-2 bg-neutral-900 rounded-full overflow-hidden border border-neutral-800">
                   <div
-                    className="h-full bg-white transition-all duration-700 ease-out"
-                    style={{ width: `${Math.min((cycleCount / 100) * 100, 100)}%` }}
+                    className="h-full transition-all duration-700 ease-out"
+                    style={{
+                      width: `${Math.min((cycleCount / 100) * 100, 100)}%`,
+                      backgroundColor: "var(--pattern-accent)",
+                    }}
                   />
                 </div>
-              </div>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Right: Action Panel */}
             <div className="flex flex-col gap-3 lg:min-w-[260px]">
               {loading ? (
-                /* Skeleton — same footprint as loaded state */
                 <div className="space-y-3">
-                  <div className="h-12 bg-neutral-900 rounded-lg animate-pulse border border-neutral-800" />
+                  <Skeleton className="h-12 w-full rounded-lg" />
                   <div className="flex gap-2">
-                    <div className="flex-1 h-9 bg-neutral-900 rounded-md animate-pulse border border-neutral-800" />
-                    <div className="flex-1 h-9 bg-neutral-900 rounded-md animate-pulse border border-neutral-800" />
+                    <Skeleton className="flex-1 h-9 rounded-md" />
+                    <Skeleton className="flex-1 h-9 rounded-md" />
                   </div>
-                  <div className="h-9 w-12 bg-neutral-900 rounded-md animate-pulse border border-neutral-800 ml-auto" />
+                  <div className="flex gap-2">
+                    <Skeleton className="flex-1 h-9 rounded-md" />
+                    <Skeleton className="h-9 w-12 rounded-md" />
+                  </div>
+                </div>
+              ) : error ? (
+                <div className="p-4 border border-amber-900/40 bg-amber-950/20 rounded-lg space-y-3">
+                  <div className="text-xs text-amber-300 font-medium">System warming up</div>
+                  <p className="text-[11px] text-amber-400/70 leading-relaxed">{error}</p>
+                  <button
+                    onClick={loadData}
+                    className="w-full py-2 text-xs font-medium rounded-md border border-amber-800 text-amber-400 hover:bg-amber-900/30 hover:border-amber-600 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <RefreshCw size={14} /> Retry
+                  </button>
                 </div>
               ) : !msmwActive ? (
                 canStartMSMW ? (
@@ -184,7 +237,6 @@ export default function DashboardPage() {
                   </button>
                 ) : (
                   <div className="flex flex-col gap-2">
-                    {/* Budget Status */}
                     <div className="flex items-center gap-3 p-3 rounded-lg border border-neutral-800 bg-neutral-950/50">
                       <BatteryWarning size={18} className="text-amber-500 flex-shrink-0" />
                       <div>
@@ -195,7 +247,6 @@ export default function DashboardPage() {
                       </div>
                     </div>
 
-                    {/* Hard Mode — same height whether confirming or not */}
                     {!showHardConfirm ? (
                       <button
                         onClick={() => setShowHardConfirm(true)}
@@ -207,6 +258,7 @@ export default function DashboardPage() {
                       <div className="flex flex-col gap-2">
                         <button
                           onClick={async () => {
+                            sounds.hardMode();
                             await startMSMW(pattern.id, true);
                             setTodayCCU((c) => c + 60);
                             await addCCU("Started MSMW Session (HARD MODE)", 60);
@@ -228,9 +280,7 @@ export default function DashboardPage() {
                 )
               ) : (
                 <div className="space-y-3">
-                  {/* Live Timer */}
                   <div className="text-center py-2 relative">
-                    {/* Pulsing live dot */}
                     <div className="flex items-center justify-center gap-2 mb-2">
                       <span className="relative flex h-2 w-2">
                         <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${hardMode ? "bg-rose-400" : "bg-emerald-400"}`}></span>
@@ -260,27 +310,29 @@ export default function DashboardPage() {
               )}
 
               {/* Quick Links */}
-              <div className="flex gap-2 pt-1">
-                <Link
-                  href="/practice"
-                  className="flex-1 py-2.5 text-[11px] text-center text-black bg-white font-semibold rounded-md hover:bg-zinc-200 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-1"
-                >
-                  Code <ChevronRight size={12} />
-                </Link>
-                <Link
-                  href="/daily"
-                  className="flex-1 py-2.5 text-[11px] text-center text-zinc-400 border border-neutral-800 rounded-md hover:border-zinc-600 hover:text-white transition-all duration-200 flex items-center justify-center"
-                >
-                  Daily
-                </Link>
-                <button
-                  onClick={() => setEmergencyMode(true)}
-                  className="px-3 py-2.5 text-amber-400 border border-amber-900 rounded-md hover:bg-amber-950/30 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"
-                  title="Word-Blur Emergency"
-                >
-                  <AlertTriangle size={14} />
-                </button>
-              </div>
+              {!loading && !error && (
+                <div className="flex gap-2 pt-1">
+                  <Link
+                    href="/practice"
+                    className="flex-1 py-2.5 text-[11px] text-center text-black bg-white font-semibold rounded-md hover:bg-zinc-200 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-1"
+                  >
+                    Code <ChevronRight size={12} />
+                  </Link>
+                  <Link
+                    href="/daily"
+                    className="flex-1 py-2.5 text-[11px] text-center text-zinc-400 border border-neutral-800 rounded-md hover:border-zinc-600 hover:text-white transition-all duration-200 flex items-center justify-center"
+                  >
+                    Daily
+                  </Link>
+                  <button
+                    onClick={() => setEmergencyMode(true)}
+                    className="px-3 py-2.5 text-amber-400 border border-amber-900 rounded-md hover:bg-amber-950/30 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"
+                    title="Word-Blur Emergency"
+                  >
+                    <AlertTriangle size={14} />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -289,63 +341,85 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Pattern Details */}
         <div className="lg:col-span-2 space-y-4">
-          <CodeBlock code={pattern.template} filename={`${pattern.id}.template.js`} />
-
-          {/* Compact Info Toggle */}
-          <button
-            onClick={() => setShowInfo(!showInfo)}
-            className="w-full py-2 text-xs text-zinc-500 border border-neutral-800 rounded-md hover:border-zinc-600 hover:text-white transition-colors"
-          >
-            {showInfo ? "Hide" : "Show"} Trigger & Invariant
-          </button>
-
-          {showInfo && (
-            <div className="block-square p-4 space-y-3">
-              <div>
-                <div className="text-[10px] font-mono text-zinc-500 uppercase mb-1">Trigger</div>
-                <p className="text-sm text-zinc-300">{pattern.trigger}</p>
-              </div>
-              <div>
-                <div className="text-[10px] font-mono text-zinc-500 uppercase mb-1">Invariant</div>
-                <p className="text-sm text-zinc-300">{pattern.invariant}</p>
-              </div>
-              <div>
-                <div className="text-[10px] font-mono text-zinc-500 uppercase mb-1">Complexity</div>
-                <p className="text-sm text-zinc-300 font-mono">{pattern.complexity}</p>
+          {loading ? (
+            <div className="space-y-4">
+              <Skeleton className="h-40 w-full" />
+              <Skeleton className="h-9 w-full" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Skeleton className="h-16" />
+                <Skeleton className="h-16" />
+                <Skeleton className="h-16" />
+                <Skeleton className="h-16" />
               </div>
             </div>
-          )}
+          ) : (
+            <>
+              <CodeBlock code={pattern.template} filename={`${pattern.id}.template.js`} />
 
-          {/* Problems — compact list */}
-          <div className="pt-2">
-            <div className="flex items-center gap-2 mb-3">
-              <TrendingUp size={14} className="text-zinc-500" />
-              <span className="text-[10px] font-mono text-zinc-500 uppercase">Architecture Set</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {pattern.problems.map((p, i) => (
-                <div
-                  key={i}
-                  className="block p-3 bg-neutral-950 border border-neutral-800 rounded-md"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-white">{p.name}</span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                      p.difficulty === "Easy" ? "bg-emerald-950/50 text-emerald-400 border-emerald-900" :
-                      p.difficulty === "Medium" ? "bg-amber-950/50 text-amber-400 border-amber-900" :
-                      "bg-rose-950/50 text-rose-400 border-rose-900"
-                    }`}>{p.difficulty}</span>
-                  </div>
-                  <p className="text-[10px] text-zinc-500 mt-1 truncate">{p.why}</p>
+              <button
+                onClick={() => setShowInfo(!showInfo)}
+                className="w-full py-2 text-xs text-zinc-500 border border-neutral-800 rounded-md hover:border-zinc-600 hover:text-white transition-colors"
+              >
+                {showInfo ? "Hide" : "Show"} Trigger & Invariant
+              </button>
+
+              <AnimatePresence>
+                {showInfo && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="block-square p-4 space-y-3">
+                      <div>
+                        <div className="text-[10px] font-mono text-zinc-500 uppercase mb-1">Trigger</div>
+                        <p className="text-sm text-zinc-300">{pattern.trigger}</p>
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-mono text-zinc-500 uppercase mb-1">Invariant</div>
+                        <p className="text-sm text-zinc-300">{pattern.invariant}</p>
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-mono text-zinc-500 uppercase mb-1">Complexity</div>
+                        <p className="text-sm text-zinc-300 font-mono">{pattern.complexity}</p>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <div className="pt-2">
+                <div className="flex items-center gap-2 mb-3">
+                  <TrendingUp size={14} className="text-zinc-500" />
+                  <span className="text-[10px] font-mono text-zinc-500 uppercase">Architecture Set</span>
                 </div>
-              ))}
-            </div>
-          </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {pattern.problems.map((p, i) => (
+                    <div
+                      key={i}
+                      className="block p-3 bg-neutral-950 border border-neutral-800 rounded-md"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-white">{p.name}</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                          p.difficulty === "Easy" ? "bg-emerald-950/50 text-emerald-400 border-emerald-900" :
+                          p.difficulty === "Medium" ? "bg-amber-950/50 text-amber-400 border-amber-900" :
+                          "bg-rose-950/50 text-rose-400 border-rose-900"
+                        }`}>{p.difficulty}</span>
+                      </div>
+                      <p className="text-[10px] text-zinc-500 mt-1 truncate">{p.why}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Right: Sidebar */}
         <div className="space-y-4">
-          {/* Timer Card (only when active) */}
           {msmwActive && (
             <div className="block-elevated p-4">
               <div className="flex items-center gap-2 mb-3">
@@ -361,42 +435,61 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Pattern Navigator */}
-          <div className="block-square p-4">
-            <div className="text-[10px] font-mono text-zinc-500 uppercase mb-3">Pattern Navigator</div>
-            <div className="flex flex-wrap gap-1.5">
-              {patterns.map((p, i) => (
-                <button
-                  key={p.id}
-                  onClick={() => setCurrentPatternIndex(i)}
-                  className={`px-2 py-1 text-[10px] rounded border transition-colors ${
-                    i === currentPatternIndex
-                      ? "bg-white text-black border-white"
-                      : "border-neutral-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600"
-                  }`}
-                >
-                  {p.id}
-                </button>
-              ))}
+          {loading ? (
+            <div className="space-y-4">
+              <div className="block-square p-4 space-y-3">
+                <Skeleton className="h-3 w-32" />
+                <div className="flex flex-wrap gap-1.5">
+                  {Array.from({ length: 16 }).map((_, i) => (
+                    <Skeleton key={i} className="h-6 w-10" />
+                  ))}
+                </div>
+              </div>
+              <div className="block-square p-4 space-y-3">
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-full" />
+              </div>
             </div>
-          </div>
+          ) : (
+            <>
+              <div className="block-square p-4">
+                <div className="text-[10px] font-mono text-zinc-500 uppercase mb-3">Pattern Navigator</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {patterns.map((p, i) => (
+                    <button
+                      key={p.id}
+                      onClick={() => setCurrentPatternIndex(i)}
+                      className={`px-2 py-1 text-[10px] rounded border transition-colors ${
+                        i === currentPatternIndex
+                          ? "bg-white text-black border-white"
+                          : "border-neutral-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600"
+                      }`}
+                    >
+                      {p.id}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-          {/* Stats */}
-          <div className="block-square p-4 space-y-3">
-            <div className="text-[10px] font-mono text-zinc-500 uppercase">Today's Stats</div>
-            <div className="flex justify-between text-sm">
-              <span className="text-zinc-400">CCU Spent</span>
-              <span className="font-mono text-white">{todayCCU} / 100</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-zinc-400">Pattern Stage</span>
-              <span className="font-mono text-white">{cycleStage}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-zinc-400">Cycles</span>
-              <span className="font-mono text-white">{cycleCount}</span>
-            </div>
-          </div>
+              <div className="block-square p-4 space-y-3">
+                <div className="text-[10px] font-mono text-zinc-500 uppercase">Today&apos;s Stats</div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-zinc-400">CCU Spent</span>
+                  <span className="font-mono text-white">{animatedCCU} / 100</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-zinc-400">Pattern Stage</span>
+                  <span className="font-mono text-white">{cycleStage}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-zinc-400">Cycles</span>
+                  <span className="font-mono text-white">{animatedCycles}</span>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
