@@ -8,8 +8,26 @@ let localDb: Database.Database | null = null;
 let tursoClient: Client | null = null;
 
 // Determine which database to use
+// Vercel may prefix env vars with the DB name, so check multiple variations
+function getTursoEnv() {
+  const url =
+    process.env.TURSO_DATABASE_URL ||
+    process.env.neuro_TURSO_DATABASE_URL ||
+    "";
+  const token =
+    process.env.TURSO_AUTH_TOKEN ||
+    process.env.neuro_TURSO_AUTH_TOKEN ||
+    "";
+  return { url, token };
+}
+
 function useTurso(): boolean {
-  return !!process.env.TURSO_DATABASE_URL && !!process.env.TURSO_AUTH_TOKEN;
+  // On Vercel (serverless), filesystem SQLite is impossible — force Turso
+  if (process.env.VERCEL || process.env.VERCEL_ENV) {
+    return true;
+  }
+  const { url, token } = getTursoEnv();
+  return !!url && !!token;
 }
 
 function getLocalDb(): Database.Database {
@@ -23,9 +41,13 @@ function getLocalDb(): Database.Database {
 
 function getTursoClient(): Client {
   if (!tursoClient) {
+    const { url, token } = getTursoEnv();
+    if (!url || !token) {
+      throw new Error("Turso credentials not found in environment variables");
+    }
     tursoClient = createClient({
-      url: process.env.TURSO_DATABASE_URL!,
-      authToken: process.env.TURSO_AUTH_TOKEN!,
+      url,
+      authToken: token,
     });
   }
   return tursoClient;
