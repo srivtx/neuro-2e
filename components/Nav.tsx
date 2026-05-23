@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Cpu, Grid3x3, Dumbbell, CalendarDays, FlaskConical } from "lucide-react";
+import { Cpu, Map, Grid3x3, Dumbbell, CalendarDays, FlaskConical } from "lucide-react";
 
 const links = [
   { href: "/", label: "Dashboard", icon: Cpu },
+  { href: "/roadmap", label: "Roadmap", icon: Map },
   { href: "/patterns", label: "Patterns", icon: Grid3x3 },
   { href: "/practice", label: "Practice", icon: Dumbbell },
   { href: "/daily", label: "Daily OS", icon: CalendarDays },
