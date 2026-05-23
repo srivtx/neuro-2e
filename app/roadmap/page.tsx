@@ -81,24 +81,29 @@ export default function RoadmapPage() {
       <div className="block-elevated p-5">
         <div className="flex items-center gap-2 mb-4">
           <TrendingUp size={16} className="text-zinc-400" />
-          <span className="text-xs font-mono text-zinc-400 uppercase">Pattern Progress</span>
+          <span className="text-xs font-mono text-zinc-400 uppercase">
+            {activePhase === 1 ? "Phase 1 Patterns" : "Phase 2 Patterns"}
+          </span>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-          {patterns.map((p) => {
-            const stats = patternStats[p.id] ?? { cycles: 0, solved: 0 };
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {displayedWeeks.filter((w) => w.patternId !== "review").map((week) => {
+            const stats = patternStats[week.patternId] ?? { cycles: 0, solved: 0 };
             const stage = getStage(stats.cycles);
+            const totalProblems = week.problems.filter((p) => p.number).length;
             return (
-              <div key={p.id} className="block-square p-3">
-                <div className="text-xs font-medium text-zinc-300">{p.name}</div>
-                <div className="flex items-center justify-between mt-1">
-                  <span className={`text-[10px] ${stage.color}`}>{stage.label}</span>
+              <div key={week.patternId} className="block-square p-4">
+                <div className="flex items-center justify-between mb-1">
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded border ${stage.color} border-current opacity-50`}>
+                    {stage.label}
+                  </span>
                 </div>
-                <div className="flex items-center justify-between mt-1">
-                  <span className="text-[10px] text-zinc-600">{stats.solved} solved</span>
-                  <span className="text-[10px] text-zinc-600">{stats.cycles}/100 cycles</span>
-                </div>
-                <div className="w-full h-1 bg-neutral-900 rounded-full mt-2 overflow-hidden">
-                  <div className="h-full bg-white transition-all" style={{ width: `${Math.min((stats.cycles / 100) * 100, 100)}%` }} />
+                <div className="text-sm font-medium text-zinc-300 mt-2">{week.patternName}</div>
+                <div className="text-xs text-zinc-500 mt-1">{stats.solved} / {totalProblems} problems</div>
+                <div className="w-full h-1.5 bg-neutral-900 rounded-full mt-3 overflow-hidden">
+                  <div 
+                    className="h-full bg-white transition-all rounded-full" 
+                    style={{ width: `${Math.min((stats.solved / totalProblems) * 100, 100)}%` }} 
+                  />
                 </div>
               </div>
             );
