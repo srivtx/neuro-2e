@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { roadmap } from "@/lib/roadmap";
+import { fullRoadmap } from "@/lib/roadmap";
 import { patterns } from "@/lib/patterns";
 import { getPatternCycles } from "@/lib/actions";
-import { Check, Lock, ChevronDown, ChevronUp, Target, TrendingUp, BookOpen } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Target, TrendingUp, BookOpen } from "lucide-react";
 
 export default function RoadmapPage() {
   const [openWeek, setOpenWeek] = useState<number | null>(1);
+  const [activePhase, setActivePhase] = useState<1 | 2>(1);
   const [patternCycles, setPatternCycles] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
@@ -24,6 +25,10 @@ export default function RoadmapPage() {
     load();
   }, []);
 
+  const phase1Weeks = fullRoadmap.filter((w) => w.week <= 8);
+  const phase2Weeks = fullRoadmap.filter((w) => w.week > 8);
+  const displayedWeeks = activePhase === 1 ? phase1Weeks : phase2Weeks;
+
   const getStage = (cycles: number) => {
     if (cycles < 5) return { label: "Discovery", color: "text-zinc-500" };
     if (cycles < 15) return { label: "Structuring", color: "text-sky-400" };
@@ -36,12 +41,31 @@ export default function RoadmapPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="text-xs font-mono text-zinc-500 uppercase tracking-wider mb-1">Phase 1: Foundation</div>
-          <h1 className="text-2xl font-bold tracking-tight">8-Week Roadmap</h1>
+          <div className="text-xs font-mono text-zinc-500 uppercase tracking-wider mb-1">
+            {activePhase === 1 ? "Phase 1: Foundation" : "Phase 2: Advanced"}
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight">{activePhase === 1 ? "8-Week Roadmap" : "8-Week Roadmap"}</h1>
         </div>
-        <div className="text-xs text-zinc-500">{roadmap.length} weeks</div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setActivePhase(1); setOpenWeek(1); }}
+            className={`px-3 py-1.5 text-xs rounded-md border transition-colors ${
+              activePhase === 1 ? "bg-white text-black border-white" : "border-neutral-800 text-zinc-400 hover:text-white"
+            }`}
+          >
+            Phase 1 (Weeks 1-8)
+          </button>
+          <button
+            onClick={() => { setActivePhase(2); setOpenWeek(9); }}
+            className={`px-3 py-1.5 text-xs rounded-md border transition-colors ${
+              activePhase === 2 ? "bg-white text-black border-white" : "border-neutral-800 text-zinc-400 hover:text-white"
+            }`}
+          >
+            Phase 2 (Weeks 9-16)
+          </button>
+        </div>
       </div>
 
       {/* Progress Overview */}
@@ -72,7 +96,7 @@ export default function RoadmapPage() {
 
       {/* Weeks */}
       <div className="space-y-3">
-        {roadmap.map((week) => {
+        {displayedWeeks.map((week) => {
           const isOpen = openWeek === week.week;
           const cycles = patternCycles[week.patternId] ?? 0;
           const stage = getStage(cycles);
