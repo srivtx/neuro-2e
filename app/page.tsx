@@ -5,23 +5,35 @@ import Link from "next/link";
 import { patterns } from "@/lib/patterns";
 import { CodeBlock } from "@/components/CodeBlock";
 import { Play, RotateCcw, Zap, CheckCircle, TrendingUp, Clock, AlertTriangle } from "lucide-react";
-
-// 2e-optimized design: 
-// - One mission at a time (no decision fatigue)
-// - Code first (bottom-up)
-// - Visual state tracking (external RAM)
-// - Built-in pause/render cycle
+import { getPatternCycles, startSession, endSession, getTodayCCU } from "@/lib/actions";
 
 export default function DashboardPage() {
   const [currentPatternIndex, setCurrentPatternIndex] = useState(0);
-  const [cycleCount, setCycleCount] = useState(12);
+  const [cycleCount, setCycleCount] = useState(0);
   const [msmwActive, setMsmwActive] = useState(false);
   const [msmwTime, setMsmwTime] = useState(0);
-  const [showSkeleton, setShowSkeleton] = useState(true); // Onion layer: skeleton first
+  const [showSkeleton, setShowSkeleton] = useState(true);
   const [showFlesh, setShowFlesh] = useState(false);
   const [emergencyMode, setEmergencyMode] = useState(false);
+  const [sessionId, setSessionId] = useState<number | null>(null);
+  const [todayCCU, setTodayCCU] = useState(0);
+  const [loading, setLoading] = useState(true);
 
   const pattern = patterns[currentPatternIndex];
+
+  // Load real cycle count from DB
+  useEffect(() => {
+    async function load() {
+      const [cycles, ccu] = await Promise.all([
+        getPatternCycles(pattern.id),
+        getTodayCCU(),
+      ]);
+      setCycleCount(cycles);
+      setTodayCCU(ccu);
+      setLoading(false);
+    }
+    load();
+  }, [pattern.id]);
 
   // MSMW Timer
   useEffect(() => {
@@ -29,7 +41,7 @@ export default function DashboardPage() {
     if (msmwActive) {
       interval = setInterval(() => {
         setMsmwTime((t) => {
-          if (t >= 7200) { // 120 min max
+          if (t >= 7200) {
             setMsmwActive(false);
             return 0;
           }
@@ -95,7 +107,8 @@ export default function DashboardPage() {
             <span className={`text-xs px-2 py-0.5 rounded bg-${pattern.color}-900/30 text-${pattern.color}-400 border border-${pattern.color}-800/50`}>
               {pattern.tag}
             </span>
-            <span className="text-xs text-zinc-500">{cycleCount} / 100 cycles</span>
+            <span className="text-xs text-zinc-500">{loading ? "..." : `${cycleCount} / 100 cycles`}</span>
+            <span className="text-xs text-zinc-600">· Today: {todayCCU} CCU</span>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -212,14 +225,26 @@ export default function DashboardPage() {
             <div className="flex gap-2 mb-4">
               {!msmwActive ? (
                 <button
-                  onClick={() => setMsmwActive(true)}
+                  onClick={async () => {
+                    setMsmwActive(true);
+                    const sid = await startSession(pattern.id);
+                    setSessionId(sid as number);
+                    setTodayCCU((c) => c + 60);
+                  }}
                   className="flex-1 py-2.5 bg-white text-black text-sm font-medium rounded-md hover:bg-zinc-200 transition-colors flex items-center justify-center gap-2"
                 >
-                  <Play size={16} /> Start Deep Work
+                  <Play size={16} /> Start Deep Work (+60 CCU)
                 </button>
               ) : (
                 <button
-                  onClick={() => setMsmwActive(false)}
+                  onClick={async () => {
+                    setMsmwActive(false);
+                    setMsmwTime(0);
+                    if (sessionId) {
+                      await endSession(sessionId);
+                      setSessionId(null);
+                    }
+                  }}
                   className="flex-1 py-2.5 bg-neutral-800 text-white text-sm font-medium rounded-md hover:bg-neutral-700 transition-colors flex items-center justify-center gap-2"
                 >
                   <RotateCcw size={16} /> Stop / Reset

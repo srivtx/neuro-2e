@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { Check, Clock, Moon, Sun, Coffee, Brain, AlertTriangle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Check, Clock, Moon, Sun, Coffee, Brain, AlertTriangle, List } from "lucide-react";
+import { getTodayCCU, getCCULog, addCCU, getTodayChecklist, setTodayChecklist } from "@/lib/actions";
 
 interface CheckItem {
   id: string;
   label: string;
   category: "pre" | "msmw" | "post" | "metabolic";
+  ccu?: number;
 }
 
 const checklistItems: CheckItem[] = [
@@ -17,12 +19,12 @@ const checklistItems: CheckItem[] = [
   { id: "p5", label: "Workspace is clear (Sensory Faraday Cage)", category: "pre" },
   { id: "p6", label: "Pre-MSMW meal consumed 30-45 min ago", category: "pre" },
   { id: "p7", label: "Single architectural objective written down", category: "pre" },
-  { id: "m1", label: "Syntax Sandbox warm-up (3 template passes)", category: "msmw" },
-  { id: "m2", label: "Onion-Layer read: Skeleton → Trigger → Flesh", category: "msmw" },
+  { id: "m1", label: "Syntax Sandbox warm-up (3 template passes)", category: "msmw", ccu: 5 },
+  { id: "m2", label: "Onion-Layer read: Skeleton → Trigger → Flesh", category: "msmw", ccu: 5 },
   { id: "m3", label: "Pause-and-Render at 20 min mark", category: "msmw" },
   { id: "m4", label: "Pause-and-Render at 40 min mark", category: "msmw" },
   { id: "m5", label: "Pause-and-Render at 60 min mark", category: "msmw" },
-  { id: "m6", label: "Derivation log written for each problem", category: "msmw" },
+  { id: "m6", label: "Derivation log written for each problem", category: "msmw", ccu: 10 },
   { id: "po1", label: "No context switching for 45-60 minutes", category: "post" },
   { id: "po2", label: "No screens (walk, stretch, or lie down)", category: "post" },
   { id: "po3", label: "Hydration", category: "post" },
@@ -40,18 +42,55 @@ const categoryLabels: Record<string, { label: string; icon: React.ReactNode }> =
 
 export default function DailyPage() {
   const [checked, setChecked] = useState<Set<string>>(new Set());
-  const [ccuSpent, setCcuSpent] = useState(40);
+  const [ccuSpent, setCcuSpent] = useState(0);
+  const [ccuLog, setCcuLog] = useState<{ activity: string; cost: number }[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const toggle = (id: string) => {
+  // Load from DB on mount
+  useEffect(() => {
+    async function load() {
+      const [savedChecked, spent, log] = await Promise.all([
+        getTodayChecklist(),
+        getTodayCCU(),
+        getCCULog(),
+      ]);
+      setChecked(new Set(savedChecked));
+      setCcuSpent(spent);
+      setCcuLog(log.map((l) => ({ activity: l.activity, cost: l.cost })));
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  const toggle = async (id: string) => {
     const next = new Set(checked);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+      // If this item has a CCU cost, add it
+      const item = checklistItems.find((i) => i.id === id);
+      if (item?.ccu) {
+        await addCCU(item.label, item.ccu);
+        setCcuSpent((s) => s + item.ccu!);
+        setCcuLog((log) => [{ activity: item.label, cost: item.ccu! }, ...log]);
+      }
+    }
     setChecked(next);
+    await setTodayChecklist(Array.from(next));
   };
 
   const categories = ["pre", "msmw", "post", "metabolic"] as const;
   const completedCount = checked.size;
   const totalCount = checklistItems.length;
+
+  if (loading) {
+    return (
+      <div className="max-w-3xl mx-auto space-y-6">
+        <div className="text-xs text-zinc-500">Loading your daily data...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -69,14 +108,12 @@ export default function DailyPage() {
           </div>
           <div className="text-xs font-mono text-zinc-500">Budget: 100 / Spent: {ccuSpent}</div>
         </div>
-        <input
-          type="range"
-          min={0}
-          max={120}
-          value={ccuSpent}
-          onChange={(e) => setCcuSpent(Number(e.target.value))}
-          className="w-full h-2 bg-neutral-900 rounded-full appearance-none cursor-pointer accent-white"
-        />
+        <div className="w-full h-2 bg-neutral-900 rounded-full overflow-hidden border border-neutral-800">
+          <div
+            className="h-full bg-white transition-all duration-500"
+            style={{ width: `${Math.min((ccuSpent / 100) * 100, 100)}%` }}
+          />
+        </div>
         <div className="flex justify-between mt-2">
           <span className="text-[10px] text-zinc-600">0</span>
           <span className="text-[10px] text-zinc-600">60 (Safe)</span>
@@ -86,6 +123,24 @@ export default function DailyPage() {
         {ccuSpent > 100 && (
           <div className="mt-3 p-2.5 bg-rose-950/30 border border-rose-900 rounded-md text-xs text-rose-300 flex items-center gap-2">
             <AlertTriangle size={14} /> You are in metabolic debt. Schedule recovery tomorrow.
+          </div>
+        )}
+
+        {/* CCU Log */}
+        {ccuLog.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-neutral-800">
+            <div className="flex items-center gap-2 mb-2">
+              <List size={14} className="text-zinc-500" />
+              <span className="text-xs font-mono text-zinc-500 uppercase">Today's Spend</span>
+            </div>
+            <div className="space-y-1">
+              {ccuLog.map((log, i) => (
+                <div key={i} className="flex justify-between text-xs">
+                  <span className="text-zinc-400">{log.activity}</span>
+                  <span className="text-zinc-500 font-mono">+{log.cost}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -129,6 +184,9 @@ export default function DailyPage() {
                       <span className={`text-sm ${checked.has(item.id) ? "text-emerald-300" : "text-zinc-300"}`}>
                         {item.label}
                       </span>
+                      {item.ccu && (
+                        <span className="ml-auto text-[10px] text-zinc-600 font-mono">+{item.ccu}</span>
+                      )}
                     </button>
                   ))}
                 </div>

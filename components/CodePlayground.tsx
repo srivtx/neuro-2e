@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { problems, Problem, TestCase } from "@/lib/problems";
 import { patterns } from "@/lib/patterns";
+import { markProblemSolved } from "@/lib/actions";
 import { Play, RotateCcw, Check, Circle, AlertTriangle, ChevronDown, ChevronUp, Copy, Eye, EyeOff } from "lucide-react";
 
 function arraysEqual(a: any, b: any): boolean {
@@ -134,6 +135,13 @@ export default function CodePlayground() {
   };
 
   const allPassed = testResults.length > 0 && testResults.every((r) => r.passed);
+
+  // Save to DB when all tests pass
+  useEffect(() => {
+    if (allPassed && problem) {
+      markProblemSolved(problem.id, problem.patternId, problem.name, problem.number, problem.difficulty);
+    }
+  }, [allPassed]);
 
   return (
     <div className="max-w-5xl mx-auto space-y-4">
