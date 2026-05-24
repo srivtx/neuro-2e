@@ -36,9 +36,10 @@ function valueEqual(a: any, b: any): boolean {
 
 interface CodePlaygroundProps {
   initialProblemId?: string;
+  focusMode?: boolean;
 }
 
-export default function CodePlayground({ initialProblemId }: CodePlaygroundProps) {
+export default function CodePlayground({ initialProblemId, focusMode = false }: CodePlaygroundProps) {
   const initialIdx = initialProblemId ? problems.findIndex((p) => p.id === initialProblemId) : 0;
   const [problemIdx, setProblemIdx] = useState(Math.max(initialIdx, 0));
   const [code, setCode] = useState("");
@@ -88,6 +89,15 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
 
   // Copy confirmation
   const [copied, setCopied] = useState(false);
+
+  // Toast state
+  const [toast, setToast] = useState<{ message: string; type: "error" | "success" } | null>(null);
+  useEffect(() => {
+    if (toast) {
+      const t = setTimeout(() => setToast(null), 3000);
+      return () => clearTimeout(t);
+    }
+  }, [toast]);
 
   // Refs for timers so auto-save interval doesn't reset every second
   const derivationTimerRef = useRef(derivationTimer);
@@ -332,7 +342,7 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
 
   const submitDerivation = async () => {
     if (!structuralNecessity.trim()) {
-      alert("Fill in the core derivation before submitting.");
+      setToast({ message: "Fill in the core derivation before submitting.", type: "error" });
       return;
     }
 
@@ -352,9 +362,10 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
       setDerivationSaved(true);
       setDerivationActive(false);
       setActiveTab("editor");
+      setToast({ message: "Derivation saved. Code editor unlocked.", type: "success" });
     } catch (err) {
       console.error("Failed to save derivation log:", err);
-      alert("Failed to save derivation log. Check the console for details.");
+      setToast({ message: "Failed to save derivation log. Retry?", type: "error" });
     }
   };
 
@@ -391,26 +402,41 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
         onBreakStart={handleBreakStart}
         onBreakEnd={handleBreakEnd}
       />
-      <div className="max-w-5xl mx-auto space-y-4">
-        <CCUWarning />
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed top-24 right-6 z-[70] px-4 py-2.5 rounded-md border text-xs font-medium shadow-lg animate-pulse ${
+          toast.type === "error"
+            ? "bg-rose-950/90 border-rose-800 text-rose-300"
+            : "bg-emerald-950/90 border-emerald-800 text-emerald-300"
+        }`}>
+          {toast.message}
+        </div>
+      )}
+
+      <div className={`mx-auto space-y-4 ${focusMode ? "max-w-3xl" : "max-w-5xl"}`}>
+        {!focusMode && <CCUWarning />}
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="text-xs font-mono text-zinc-500 uppercase tracking-wider mb-1">Problem {problemIdx + 1} / {problems.length}</div>
-          <h1 className="text-2xl font-bold tracking-tight">{problem.name}</h1>
-          <div className="flex items-center gap-2 mt-1">
-            <span className={`text-xs px-2 py-0.5 rounded border font-medium ${
-              problem.difficulty === "Easy" ? "bg-emerald-950/50 text-emerald-400 border-emerald-900" :
-              problem.difficulty === "Medium" ? "bg-amber-950/50 text-amber-400 border-amber-900" :
-              "bg-rose-950/50 text-rose-400 border-rose-900"
-            }`}>
-              {problem.difficulty}
-            </span>
-            <span className="text-xs text-zinc-500">LeetCode #{problem.number}</span>
-            {pattern && (
-              <span className="text-xs text-zinc-500">· {pattern.name}</span>
-            )}
-          </div>
+          {!focusMode && (
+            <div className="text-xs font-mono text-zinc-500 uppercase tracking-wider mb-1">Problem {problemIdx + 1} / {problems.length}</div>
+          )}
+          <h1 className={`font-bold tracking-tight ${focusMode ? "text-lg" : "text-2xl"}`}>{problem.name}</h1>
+          {!focusMode && (
+            <div className="flex items-center gap-2 mt-1">
+              <span className={`text-xs px-2 py-0.5 rounded border font-medium ${
+                problem.difficulty === "Easy" ? "bg-emerald-950/50 text-emerald-400 border-emerald-900" :
+                problem.difficulty === "Medium" ? "bg-amber-950/50 text-amber-400 border-amber-900" :
+                "bg-rose-950/50 text-rose-400 border-rose-900"
+              }`}>
+                {problem.difficulty}
+              </span>
+              <span className="text-xs text-zinc-500">LeetCode #{problem.number}</span>
+              {pattern && (
+                <span className="text-xs text-zinc-500">· {pattern.name}</span>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -432,7 +458,7 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
       </div>
 
       {/* Derivation Status Bar */}
-      {!derivationUnlocked && (
+      {!focusMode && !derivationUnlocked && (
         <div className="block-elevated p-4 bg-amber-950/20 border-amber-900/50">
           <div className="flex items-center gap-3">
             <Lock size={18} className="text-amber-400" />
@@ -450,7 +476,7 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
         </div>
       )}
 
-      {derivationSaved && (
+      {!focusMode && derivationSaved && (
         <div className="block-elevated p-4 bg-emerald-950/20 border-emerald-900/50">
           <div className="flex items-center gap-3">
             <Unlock size={18} className="text-emerald-400" />
@@ -462,23 +488,25 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
         </div>
       )}
 
-      {/* Mobile Tabs */}
-      <div className="flex sm:hidden gap-2 border-b border-neutral-800 pb-2">
-        {(["description", "derivation", "editor", "tests"] as const).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`px-3 py-1.5 text-xs rounded-md border transition-colors ${
-              activeTab === tab ? "bg-white text-black border-white" : "border-neutral-800 text-zinc-400"
-            }`}
-          >
-            {tab === "derivation" ? "Derive" : tab.charAt(0).toUpperCase() + tab.slice(1)}
-          </button>
-        ))}
-      </div>
+      {!focusMode && (
+        <div className="flex sm:hidden gap-2 border-b border-neutral-800 pb-2">
+          {(["description", "derivation", "editor", "tests"] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-3 py-1.5 text-xs rounded-md border transition-colors ${
+                activeTab === tab ? "bg-white text-black border-white" : "border-neutral-800 text-zinc-400"
+              }`}
+            >
+              {tab === "derivation" ? "Derive" : tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className={`grid gap-4 ${focusMode ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-2"}`}>
         {/* Left: Problem Description + Derivation */}
+        {!focusMode && (
         <div className={`space-y-4 ${activeTab !== "description" && activeTab !== "derivation" ? "hidden sm:block" : ""}`}>
           {/* Onion-Layer Reader */}
           {!onionComplete && (
@@ -644,7 +672,7 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
               )}
             </div>
           </div>
-        </div>
+        </div>)}
 
         {/* Right: Code Editor + Tests */}
         <div className={`space-y-4 ${activeTab !== "editor" && activeTab !== "tests" ? "hidden sm:block" : ""}`}>
@@ -717,7 +745,7 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
           </div>
 
           {/* Stuck Emergency Protocol */}
-          {derivationUnlocked && !allPassed && (
+          {!focusMode && derivationUnlocked && !allPassed && (
             <div className="border border-neutral-800 rounded-md overflow-hidden">
               {!stuckMode ? (
                 <button
@@ -867,7 +895,7 @@ export default function CodePlayground({ initialProblemId }: CodePlaygroundProps
           )}
 
           {/* Solution Viewer */}
-          {showSolution && (
+          {!focusMode && showSolution && (
             <div className="block-elevated overflow-hidden">
               <div className="flex items-center justify-between px-4 py-2 border-b border-neutral-800 bg-neutral-900/50">
                 <span className="text-xs text-zinc-400 font-mono">canonical.solution.js</span>

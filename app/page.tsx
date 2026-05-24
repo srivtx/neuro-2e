@@ -10,6 +10,7 @@ import { getPatternCycles, getTodayCCU, addCCU } from "@/lib/actions";
 import { setPatternColor } from "@/lib/theme";
 import { useAnimatedNumber } from "@/lib/hooks";
 import { sounds } from "@/lib/sound";
+import StreakHeatmap, { saveStreakDate } from "@/components/StreakHeatmap";
 import { useSession } from "@/components/SessionProvider";
 import CCUWarning from "@/components/CCUWarning";
 
@@ -182,15 +183,20 @@ export default function DashboardPage() {
                       <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Pattern Mastery</span>
                       <span className="text-[10px] font-mono text-zinc-400">{cycleStage}</span>
                     </div>
-                <div className="w-full h-2 bg-neutral-900 rounded-full overflow-hidden border border-neutral-800">
-                  <div
-                    className="h-full transition-all duration-700 ease-out"
-                    style={{
-                      width: `${Math.min((cycleCount / 100) * 100, 100)}%`,
-                      backgroundColor: "var(--pattern-accent)",
-                    }}
-                  />
-                </div>
+                    <div className="w-full h-2 bg-neutral-900 rounded-full overflow-hidden border border-neutral-800">
+                      <div
+                        className={`h-full transition-all duration-700 ease-out ${cycleCount >= 100 ? "celebrate-100" : ""}`}
+                        style={{
+                          width: `${Math.min((cycleCount / 100) * 100, 100)}%`,
+                          backgroundColor: cycleCount >= 100 ? undefined : "var(--pattern-accent)",
+                        }}
+                      />
+                    </div>
+                    {cycleCount >= 100 && (
+                      <div className="mt-2 text-[11px] text-amber-400 font-medium animate-pulse">
+                        Pattern proceduralized. The snap is real.
+                      </div>
+                    )}
                   </div>
                 </>
               )}
@@ -228,9 +234,10 @@ export default function DashboardPage() {
                       await startMSMW(pattern.id);
                       setTodayCCU((c) => c + 60);
                       await addCCU("Started MSMW Session", 60);
+                      saveStreakDate();
                       setShowHardConfirm(false);
                     }}
-                    className="w-full py-3.5 text-sm font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 bg-white text-black hover:bg-zinc-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-white/5 active:translate-y-0 active:shadow-none"
+                    className="hud-button hud-button-primary w-full"
                   >
                     <Play size={16} fill="currentColor" /> Start Deep Work
                     <span className="text-[10px] font-normal opacity-60 ml-1">—60 CCU</span>
@@ -250,7 +257,7 @@ export default function DashboardPage() {
                     {!showHardConfirm ? (
                       <button
                         onClick={() => setShowHardConfirm(true)}
-                        className="w-full py-3.5 text-sm font-semibold rounded-lg border transition-all duration-200 flex items-center justify-center gap-2 border-rose-800/60 bg-rose-950/20 text-rose-300 hover:bg-rose-900/30 hover:border-rose-600 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-rose-900/10 active:translate-y-0 active:shadow-none"
+                        className="hud-button hud-button-danger w-full"
                       >
                         <Skull size={16} /> Hard Mode
                       </button>
@@ -264,7 +271,7 @@ export default function DashboardPage() {
                             await addCCU("Started MSMW Session (HARD MODE)", 60);
                             setShowHardConfirm(false);
                           }}
-                          className="w-full py-3.5 text-sm font-semibold rounded-lg bg-rose-500 text-black transition-all duration-200 flex items-center justify-center gap-2 hover:bg-rose-400 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-rose-500/10 active:translate-y-0 active:shadow-none"
+                          className="hud-button hud-button-danger w-full !bg-rose-500 !text-black !border-rose-500 hover:!bg-rose-400 hover:!border-rose-400"
                         >
                           <Skull size={16} /> Confirm — Start Hard Mode
                         </button>
@@ -298,10 +305,8 @@ export default function DashboardPage() {
                       setTodayCCU((c) => Math.max(0, c - 60));
                       setShowHardConfirm(false);
                     }}
-                    className={`w-full py-3 text-sm font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 text-white hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0 active:shadow-none ${
-                      hardMode
-                        ? "bg-rose-900 hover:bg-rose-800 hover:shadow-rose-900/10"
-                        : "bg-neutral-800 hover:bg-neutral-700 hover:shadow-black/20"
+                    className={`hud-button w-full ${
+                      hardMode ? "hud-button-danger" : ""
                     }`}
                   >
                     <RotateCcw size={16} /> Stop Session
@@ -312,25 +317,25 @@ export default function DashboardPage() {
               {/* Quick Links */}
               {!loading && !error && (
                 <div className="flex gap-2 pt-1">
-                  <Link
-                    href="/practice"
-                    className="flex-1 py-2.5 text-[11px] text-center text-black bg-white font-semibold rounded-md hover:bg-zinc-200 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-1"
-                  >
-                    Code <ChevronRight size={12} />
-                  </Link>
-                  <Link
-                    href="/daily"
-                    className="flex-1 py-2.5 text-[11px] text-center text-zinc-400 border border-neutral-800 rounded-md hover:border-zinc-600 hover:text-white transition-all duration-200 flex items-center justify-center"
-                  >
-                    Daily
-                  </Link>
-                  <button
-                    onClick={() => setEmergencyMode(true)}
-                    className="px-3 py-2.5 text-amber-400 border border-amber-900 rounded-md hover:bg-amber-950/30 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"
-                    title="Word-Blur Emergency"
-                  >
-                    <AlertTriangle size={14} />
-                  </button>
+                <Link
+                  href="/practice"
+                  className="hud-button hud-button-primary flex-1 !py-2 !text-[11px]"
+                >
+                  Code <ChevronRight size={12} />
+                </Link>
+                <Link
+                  href="/daily"
+                  className="hud-button flex-1 !py-2 !text-[11px]"
+                >
+                  Daily
+                </Link>
+                <button
+                  onClick={() => setEmergencyMode(true)}
+                  className="hud-button !px-3 !py-2 text-amber-400"
+                  title="Word-Blur Emergency"
+                >
+                  <AlertTriangle size={14} />
+                </button>
                 </div>
               )}
             </div>
@@ -434,6 +439,8 @@ export default function DashboardPage() {
               )}
             </div>
           )}
+
+          <StreakHeatmap />
 
           {loading ? (
             <div className="space-y-4">

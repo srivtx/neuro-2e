@@ -3,7 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { Cpu, Map, Grid3x3, Dumbbell, CalendarDays, FlaskConical, RotateCcw, Keyboard, PenLine, Battery, BatteryWarning, BatteryLow } from "lucide-react";
+import { useSession } from "@/components/SessionProvider";
+import {
+  Cpu, Map, Grid3x3, Dumbbell, CalendarDays, FlaskConical,
+  RotateCcw, Keyboard, PenLine, Battery, BatteryWarning, BatteryLow
+} from "lucide-react";
 import { getTodayCCU } from "@/lib/actions";
 
 const links = [
@@ -21,6 +25,7 @@ const links = [
 export function Nav() {
   const pathname = usePathname();
   const [ccu, setCcu] = useState<number | null>(null);
+  const { active: sessionActive } = useSession();
 
   useEffect(() => {
     let mounted = true;
@@ -37,24 +42,25 @@ export function Nav() {
   const ccuColor = remaining < 20 ? "text-rose-400" : remaining < 40 ? "text-amber-400" : remaining < 60 ? "text-sky-400" : "text-emerald-400";
   const CCUIcon = remaining < 20 ? BatteryWarning : remaining < 40 ? BatteryLow : Battery;
 
+  // Status LED color based on session state
+  const statusColor = sessionActive ? "status-led-amber" : "status-led-off";
+
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-neutral-800 bg-black/80 backdrop-blur-md">
-      <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2">
-          <div className="w-6 h-6 bg-white rounded-sm flex items-center justify-center">
-            <span className="text-black font-bold text-xs font-mono">N</span>
+    <header className="sticky top-0 z-50 w-full border-b border-white/5 bg-black/60 backdrop-blur-xl">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 h-11 flex items-center gap-3">
+        {/* Logo */}
+        <Link href="/" className="flex items-center gap-1.5 group flex-shrink-0 mr-auto">
+          <div className="w-5 h-5 bg-white rounded-[3px] flex items-center justify-center transition-transform duration-100 group-active:scale-95">
+            <span className="text-black font-bold text-[10px] font-mono">N</span>
           </div>
-          <span className="font-semibold text-sm tracking-tight">NEURO-OS</span>
+          <span className="font-semibold text-xs tracking-tight font-mono hidden sm:inline">NEURO-OS</span>
+          <span className={`status-led ${statusColor} transition-colors duration-300`} title={sessionActive ? "Session active" : "Standby"} />
         </Link>
 
-        {ccu !== null && (
-          <div className="hidden sm:flex items-center gap-1.5 mr-2" title={`${remaining} CCU remaining today`}>
-            <CCUIcon size={14} className={ccuColor} />
-            <span className={`text-[10px] font-mono font-medium ${ccuColor}`}>{ccu}/100</span>
-          </div>
-        )}
-
-        <nav className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+        {/* Right cluster: Nav + CCU */}
+        <div className="flex items-center gap-2">
+          {/* Nav Links */}
+          <nav className="flex items-center gap-0.5 overflow-x-auto no-scrollbar">
           {links.map((link) => {
             const isActive = pathname === link.href;
             const Icon = link.icon;
@@ -62,18 +68,27 @@ export function Nav() {
               <Link
                 key={link.href}
                 href={link.href}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors rounded-md whitespace-nowrap flex-shrink-0 ${
+                className={`flex items-center gap-1 px-2 py-1 text-[11px] font-medium transition-all duration-100 rounded-md whitespace-nowrap flex-shrink-0 font-mono active:translate-y-px ${
                   isActive
-                    ? "bg-neutral-800 text-white"
-                    : "text-zinc-400 hover:text-white hover:bg-neutral-900"
+                    ? "bg-white/10 text-white border border-white/10"
+                    : "text-zinc-500 hover:text-white hover:bg-white/5 border border-transparent"
                 }`}
               >
-                <Icon size={14} />
-                <span className="hidden sm:inline">{link.label}</span>
+                <Icon size={13} />
+                <span className="hidden lg:inline">{link.label}</span>
               </Link>
             );
           })}
-        </nav>
+          </nav>
+
+          {/* CCU Indicator */}
+          {ccu !== null && (
+            <div className="hidden md:flex items-center gap-1 pl-1.5 border-l border-white/10 flex-shrink-0" title={`${remaining} CCU remaining today`}>
+              <CCUIcon size={12} className={ccuColor} />
+              <span className={`text-[10px] font-mono font-medium ${ccuColor}`}>{ccu}</span>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );

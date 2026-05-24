@@ -1,17 +1,19 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import CodePlayground from "@/components/CodePlayground";
+import FocusMode from "@/components/FocusMode";
 
 function PracticeContent() {
   const searchParams = useSearchParams();
   const problemId = searchParams.get("problem") ?? undefined;
+  const [focusMode, setFocusMode] = useState(false);
 
   return (
-    <div>
-      <CodePlayground initialProblemId={problemId} />
-    </div>
+    <FocusMode isActive={focusMode} onToggle={() => setFocusMode((v) => !v)}>
+      <CodePlayground initialProblemId={problemId} focusMode={focusMode} />
+    </FocusMode>
   );
 }
 
